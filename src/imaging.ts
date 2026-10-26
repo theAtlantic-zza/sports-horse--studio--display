@@ -1,6 +1,6 @@
 import type { Annotation, StudyImage } from "../shared/types";
 
-export const DEMO_SOURCE = "/demo/horse-xray-source.png";
+export const DEMO_SOURCE = `${import.meta.env.BASE_URL}demo/horse-xray-source.png`;
 export const SHAPE_LABELS = {
   rectangle: "矩形框",
   polygon: "多边形",

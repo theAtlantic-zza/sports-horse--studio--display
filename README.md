@@ -4,7 +4,11 @@
 
 ## 在线演示与数据范围
 
-托管入口：<https://equivision-xray-studio.zza1343538124.chatgpt.site/#dashboard>。访问权限由 Sites 的站点设置控制，默认仅站点所有者可访问。
+GitHub 仓库：<https://github.com/theAtlantic-zza/sports-horse--studio--display>。
+
+GitHub Pages 展示入口：<https://theatlantic-zza.github.io/sports-horse--studio--display/#dashboard>。仓库 Settings → Pages 的 Source 设为 GitHub Actions 后，推送 main 分支会自动测试、构建并发布。
+
+Sites 备用入口：<https://equivision-xray-studio.zza1343538124.chatgpt.site/#dashboard>，已由平台确认发布成功；此地址在本次浏览器检查中遇到 Cloudflare 访问拦截。Sites 访问权限默认为站点所有者。
 
 线上版本使用浏览器 IndexedDB 保存演示数据，首次访问预置 8 张影像和 5 份标注档案。每个浏览器独立保存数据，刷新后保留；清除网站数据后恢复初始演示。分析结果固定生成，未接入真实模型、真实诊断或业务认证。
 
