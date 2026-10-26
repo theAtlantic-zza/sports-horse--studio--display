@@ -1,6 +1,10 @@
-import { Archive, emptyArchive } from "../shared/archive";
+import {
+  Archive,
+  emptyArchive,
+  migrateDemoAnnotators,
+} from "../shared/archive";
 import type { ArchiveState } from "../shared/types";
-import { LESIONS } from "../shared/types";
+import { ANNOTATORS, LESIONS } from "../shared/types";
 import { prepareDemo, renderAnnotated } from "./imaging";
 
 let database: Promise<IDBDatabase> | undefined;
@@ -18,12 +22,17 @@ let ready: Promise<void> | undefined;
 async function initialize() {
   const connection = await db();
   const exists = await new Promise<boolean>((resolve, reject) => {
-    const request = connection
-      .transaction("archive")
-      .objectStore("archive")
-      .get("current");
-    request.onsuccess = () => resolve(!!request.result);
-    request.onerror = () => reject(request.error);
+    const transaction = connection.transaction("archive", "readwrite");
+    const store = transaction.objectStore("archive");
+    const request = store.get("current");
+    let found = false;
+    request.onsuccess = () => {
+      found = !!request.result;
+      if (found && migrateDemoAnnotators(request.result))
+        store.put(request.result, "current");
+    };
+    transaction.oncomplete = () => resolve(found);
+    transaction.onerror = () => reject(transaction.error);
   });
   if (exists) return;
   const archive = new Archive(emptyArchive());
@@ -49,7 +58,7 @@ async function initialize() {
     date.setHours(10 + i, 15, 0, 0);
     Object.assign(study, {
       horseName: names[i],
-      annotator: ["林医生", "陈医生", "演示标注员"][i % 3],
+      annotator: ANNOTATORS[i % ANNOTATORS.length],
       createdAt: date.toISOString(),
       updatedAt: date.toISOString(),
     });

@@ -165,3 +165,49 @@ test("responsive dashboard keeps filters and records accessible", async ({
     });
   }
 });
+
+test("renames cached demo annotators without removing records or custom names", async ({
+  page,
+}) => {
+  await page.evaluate(async () => {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open("equivision-image-studio", 1);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    await new Promise<void>((resolve, reject) => {
+      const transaction = db.transaction("archive", "readwrite");
+      const store = transaction.objectStore("archive");
+      const request = store.get("current");
+      request.onsuccess = () => {
+        const state = request.result;
+        state.studies.forEach((study: { annotator: string }, index: number) => {
+          study.annotator = ["林医生", "陈医生", "演示标注员"][index % 3];
+        });
+        state.records.forEach(
+          (record: { annotator: string }, index: number) => {
+            record.annotator = ["林医生", "陈医生", "演示标注员"][index % 3];
+          },
+        );
+        state.records[0].annotator = "自定义标注人";
+        store.put(state, "current");
+      };
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+    });
+    db.close();
+  });
+  await page.reload();
+  await expect(
+    page.getByRole("button", { name: "编辑 IMG-000008", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "标注记录 5", exact: true }).click();
+  const table = page.locator(".dashboard-table");
+  await expect(table).toContainText("自定义标注人");
+  for (const name of ["王一伊", "朱诗嘉", "阿里米热", "李其杭"])
+    await expect(table).toContainText(name);
+  await expect(table).not.toContainText("医生");
+  await expect(table).not.toContainText("演示标注员");
+  await expect(page.locator(".dashboard-metric").first()).toContainText("08");
+  await expect(page.locator(".dashboard-metric").nth(2)).toContainText("05");
+});

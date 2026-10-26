@@ -1,3 +1,5 @@
+export const ANNOTATORS = ["王一伊", "朱诗嘉", "阿里米热", "李其杭"] as const;
+
 export const LESIONS = [
   "骨赘形成",
   "骨折疑似",

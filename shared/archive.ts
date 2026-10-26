@@ -1,4 +1,4 @@
-import { LESIONS } from "./types.ts";
+import { ANNOTATORS, LESIONS } from "./types.ts";
 import type {
   Annotation,
   AnnotationRecord,
@@ -28,6 +28,28 @@ export const emptyArchive = (): ArchiveState => ({
   studies: [],
   records: [],
 });
+
+export function migrateDemoAnnotators(state: ArchiveState): boolean {
+  const previousNames = new Set(["林医生", "陈医生", "演示标注员"]);
+  const replacement = (studyId: string) => {
+    const index = /^IMG-\d+$/.test(studyId) ? Number(studyId.slice(4)) - 1 : 0;
+    return ANNOTATORS[Math.max(0, index) % ANNOTATORS.length];
+  };
+  let changed = false;
+  for (const study of state.studies) {
+    if (previousNames.has(study.annotator)) {
+      study.annotator = replacement(study.id);
+      changed = true;
+    }
+  }
+  for (const record of state.records) {
+    if (previousNames.has(record.annotator)) {
+      record.annotator = replacement(record.studyId);
+      changed = true;
+    }
+  }
+  return changed;
+}
 const text = (value: unknown, max = 40): value is string =>
   typeof value === "string" && value.trim().length > 0 && value.length <= max;
 const isImage = (value: unknown): value is string =>
@@ -148,7 +170,7 @@ export class Archive {
       status: "uploaded",
       horseName: "追风",
       bodyPart: "左前肢 · 腕关节",
-      annotator: "演示标注员",
+      annotator: ANNOTATORS[0],
     });
     return { id };
   }

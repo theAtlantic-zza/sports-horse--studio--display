@@ -46,7 +46,7 @@ import type {
   StudyImage,
   StudySummary,
 } from "../shared/types";
-import { LESIONS } from "../shared/types";
+import { ANNOTATORS, LESIONS } from "../shared/types";
 import { api, BROWSER_DEMO } from "./api";
 import {
   DEMO_SOURCE,
@@ -98,7 +98,7 @@ export default function App() {
     confidence: 85,
     note: "",
   });
-  const [annotator, setAnnotator] = useState("演示标注员");
+  const [annotator, setAnnotator] = useState<string>(ANNOTATORS[0]);
   const [horseName, setHorseName] = useState("追风");
   const [bodyPart, setBodyPart] = useState("左前肢 · 腕关节");
   const [modal, setModal] = useState<"upload" | "confirm" | "guide" | null>(
@@ -421,7 +421,7 @@ export default function App() {
           <div className="profile">
             <span className="avatar">演</span>
             <span>
-              <strong>演示标注员</strong>
+              <strong>{ANNOTATORS[0]}</strong>
               <small>DEMO WORKSPACE</small>
             </span>
             <ShieldCheck size={18} />

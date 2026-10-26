@@ -2,7 +2,12 @@ import express from "express";
 import type { ErrorRequestHandler } from "express";
 import { mkdir, readFile, writeFile, rename } from "node:fs/promises";
 import path from "node:path";
-import { Archive, ArchiveError, emptyArchive } from "../shared/archive.ts";
+import {
+  Archive,
+  ArchiveError,
+  emptyArchive,
+  migrateDemoAnnotators,
+} from "../shared/archive.ts";
 import type { AnnotationRecord, ArchiveState } from "../shared/types.ts";
 
 export async function createApp(dataDirectory: string, analysisDelay = 900) {
@@ -50,6 +55,7 @@ export async function createApp(dataDirectory: string, analysisDelay = 900) {
     }
   }
   const archive = new Archive(state);
+  const renamed = migrateDemoAnnotators(state);
   let queue = Promise.resolve();
   function commit<T>(operation: () => T): Promise<T> {
     const task = queue.then(async () => {
@@ -74,6 +80,7 @@ export async function createApp(dataDirectory: string, analysisDelay = 900) {
     );
     return task;
   }
+  if (renamed) await commit(() => undefined);
   const app = express();
   app.disable("x-powered-by");
   app.use(express.json({ limit: "24mb" }));
