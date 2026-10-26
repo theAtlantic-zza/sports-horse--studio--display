@@ -1,0 +1,12 @@
+node_modules/
+dist/
+dist-server/
+.env
+.env.*
+.openai/metrics/
+.openai/site-source.json
+data/
+work/
+.DS_Store
+
+outputs/
