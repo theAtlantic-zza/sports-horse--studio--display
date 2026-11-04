@@ -22,6 +22,8 @@ export default function Modal({
     document.body.style.overflow = "hidden";
     element.current?.focus();
     function keydown(event: KeyboardEvent) {
+      const dialogs = document.querySelectorAll('[role="dialog"]');
+      if (dialogs[dialogs.length - 1] !== element.current) return;
       if (event.key === "Escape") close.current();
       if (event.key !== "Tab") return;
       const nodes = element.current?.querySelectorAll<HTMLElement>(

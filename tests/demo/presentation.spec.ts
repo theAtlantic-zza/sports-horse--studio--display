@@ -4,7 +4,7 @@ test("presentation mode keeps the annotation workflow in frame and preserves wor
   page,
 }) => {
   await page.setViewportSize({ width: 1600, height: 840 });
-  await page.goto("/?presentation=1");
+  await page.goto("/?presentation=1#overview");
   await expect(
     page.getByRole("button", { name: "切换汇报模式" }),
   ).toHaveAttribute("aria-pressed", "true");

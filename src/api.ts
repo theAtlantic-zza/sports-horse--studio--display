@@ -8,7 +8,11 @@ import type {
   StudySummary,
   StudyUpdate,
   RecordUpdate,
+  DiagnosisInput,
+  DiagnosisReport,
+  DiagnosisReview,
 } from "../shared/types";
+import { DIAGNOSIS_DELAY_MS } from "../shared/types";
 
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(url, {
@@ -39,6 +43,11 @@ const serverApi = {
     }),
   analyze: (id: string) =>
     request<AnalysisResult>(`/api/studies/${id}/analyze`, { method: "POST" }),
+  diagnose: (id: string, input: DiagnosisInput) =>
+    request<DiagnosisReport>(`/api/studies/${id}/diagnose`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
   save: (record: SaveRecordInput) =>
     request<AnnotationRecord>("/api/records", {
       method: "POST",
@@ -47,6 +56,11 @@ const serverApi = {
   updateRecord: (id: string, value: RecordUpdate) =>
     request<AnnotationRecord>(`/api/records/${id}`, {
       method: "PATCH",
+      body: JSON.stringify(value),
+    }),
+  reviewRecord: (id: string, value: DiagnosisReview) =>
+    request<AnnotationRecord>(`/api/records/${id}/review`, {
+      method: "POST",
       body: JSON.stringify(value),
     }),
   deleteRecord: (id: string) =>
@@ -82,11 +96,23 @@ const browserApi: typeof serverApi = {
       true,
     );
   },
+  diagnose: async (id, input) => {
+    await new Promise((resolve) => setTimeout(resolve, DIAGNOSIS_DELAY_MS));
+    return (await import("./demo-store")).demoOperation(
+      (a) => a.diagnose(id, input),
+      true,
+    );
+  },
   save: async (record) =>
     (await import("./demo-store")).demoOperation((a) => a.save(record), true),
   updateRecord: async (id, value) =>
     (await import("./demo-store")).demoOperation(
       (a) => a.updateRecord(id, value),
+      true,
+    ),
+  reviewRecord: async (id, value) =>
+    (await import("./demo-store")).demoOperation(
+      (a) => a.reviewRecord(id, value),
       true,
     ),
   deleteRecord: async (id) =>

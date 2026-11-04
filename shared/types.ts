@@ -8,6 +8,37 @@ export const LESIONS = [
   "其他病变",
 ] as const;
 export type Lesion = (typeof LESIONS)[number];
+export const BODY_PARTS = [
+  "左前肢 · 腕关节",
+  "右前肢 · 腕关节",
+  "左前肢 · 球节",
+  "右前肢 · 球节",
+  "左后肢 · 跗关节",
+  "右后肢 · 跗关节",
+] as const;
+export const DIAGNOSIS_DELAY_MS = 4800;
+
+export interface DiagnosisInput {
+  bodyPart: string;
+  targetLesion: Lesion;
+  inputMode: "annotated" | "manual";
+}
+export interface DiagnosisReport extends DiagnosisInput {
+  mock: true;
+  model: string;
+  generatedAt: string;
+  scores: { lesion: Lesion; percentage: number }[];
+  finding: string;
+  recommendation: string;
+  status: "pending" | "reviewed";
+  reviewer: string | null;
+  reviewedAt: string | null;
+  reviewConclusion: string | null;
+}
+export interface DiagnosisReview {
+  reviewer: string;
+  conclusion: string;
+}
 export type ShapeType = "rectangle" | "polygon" | "line";
 export type Point = { x: number; y: number };
 
@@ -35,6 +66,7 @@ export interface SaveRecordInput {
   annotator: string;
   annotations: Annotation[];
   annotatedImage: string;
+  diagnosis?: DiagnosisReport;
 }
 
 export interface AnnotationRecord extends Omit<SaveRecordInput, "studyId"> {

@@ -87,8 +87,17 @@ export function RecordList({
                   <td>
                     <span className="record-bodypart">{record.bodyPart}</span>
                     <small className="muted">
-                      {record.annotations.length} 处标注 ·{" "}
-                      <span className="green-text">已归档</span>
+                      {record.diagnosis
+                        ? "AI 诊疗报告"
+                        : `${record.annotations.length} 处标注`}{" "}
+                      ·{" "}
+                      <span className="green-text">
+                        {record.diagnosis
+                          ? record.diagnosis.status === "reviewed"
+                            ? "已复核"
+                            : "待复核"
+                          : "已归档"}
+                      </span>
                     </small>
                   </td>
                   <td>

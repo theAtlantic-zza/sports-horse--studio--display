@@ -62,8 +62,10 @@ import Modal from "./components/Modal";
 import DataDashboard from "./components/DataDashboard";
 import DownloadLink from "./components/DownloadLink";
 import { RecordDetail, RecordList } from "./components/Records";
+import ClinicalWorkflow from "./components/ClinicalWorkflow";
+import DiagnosticReport from "./components/DiagnosticReport";
 
-type View = "overview" | "workspace" | "records" | "dashboard";
+type View = "clinical" | "overview" | "workspace" | "records" | "dashboard";
 type Attributes = { lesion: Lesion; confidence: number; note: string };
 const TOOLS = [
   { id: "select", label: "选择 / 移动", shortcut: "V", Icon: MousePointer2 },
@@ -72,6 +74,7 @@ const TOOLS = [
   { id: "line", label: "线段", shortcut: "L", Icon: MoveUpRight },
 ] as const;
 const VIEW_LABELS = {
+  clinical: "AI 辅助诊疗",
   overview: "总览工作台",
   workspace: "影像标注",
   records: "标注记录",
@@ -82,9 +85,14 @@ export default function App() {
   const [presentation, setPresentation] = useState(
     new URLSearchParams(window.location.search).get("presentation") === "1",
   );
-  const [view, setView] = useState<View>(
-    window.location.hash === "#dashboard" ? "dashboard" : "overview",
+  const [view, setView] = useState<View>(() => {
+    const hash = window.location.hash.slice(1);
+    return Object.hasOwn(VIEW_LABELS, hash) ? (hash as View) : "clinical";
+  });
+  const [activeUser, setActiveUser] = useState(
+    sessionStorage.getItem("equivision-demo-user") || ANNOTATORS[0],
   );
+  const [focusedRecordId, setFocusedRecordId] = useState("");
   const [records, setRecords] = useState<RecordSummary[]>([]);
   const [studies, setStudies] = useState<StudySummary[]>([]);
   const [editingRecordId, setEditingRecordId] = useState<string | null>(null);
@@ -117,6 +125,20 @@ export default function App() {
   const [savedId, setSavedId] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    url.hash = view;
+    window.history.replaceState(null, "", url);
+  }, [view]);
+  useEffect(() => {
+    function followHash() {
+      const hash = window.location.hash.slice(1);
+      setView(Object.hasOwn(VIEW_LABELS, hash) ? (hash as View) : "clinical");
+    }
+    window.addEventListener("hashchange", followHash);
+    return () => window.removeEventListener("hashchange", followHash);
+  }, []);
 
   function togglePresentation() {
     const next = !presentation;
@@ -414,7 +436,7 @@ export default function App() {
       <aside className="sidebar">
         <button
           className="brand"
-          onClick={() => setView("overview")}
+          onClick={() => setView("clinical")}
           aria-label="EQUIVISION 首页"
         >
           <span className="brand-symbol">
@@ -439,6 +461,7 @@ export default function App() {
         <nav aria-label="主导航">
           {(
             [
+              { id: "clinical", Icon: Sparkles },
               { id: "overview", Icon: LayoutDashboard },
               { id: "workspace", Icon: ScanLine },
               { id: "dashboard", Icon: BarChart3 },
@@ -449,7 +472,10 @@ export default function App() {
               key={id}
               aria-label={VIEW_LABELS[id]}
               className={`nav-item ${view === id ? "active" : ""}`}
-              onClick={() => setView(id)}
+              onClick={() => {
+                setFocusedRecordId("");
+                setView(id);
+              }}
             >
               <Icon size={20} strokeWidth={1.7} />
               <span>{VIEW_LABELS[id]}</span>
@@ -490,7 +516,7 @@ export default function App() {
           <div className="profile">
             <span className="avatar">演</span>
             <span>
-              <strong>{ANNOTATORS[0]}</strong>
+              <strong>{activeUser}</strong>
               <small>DEMO WORKSPACE</small>
             </span>
             <ShieldCheck size={18} />
@@ -535,7 +561,7 @@ export default function App() {
             <span />
             演示模式
           </span>
-          <span>所有分析结果为模拟数据，仅用于标注流程展示</span>
+          <span>所有分析结果为模拟数据，AI 仅提供参考，最终结论由人工复核</span>
           <button onClick={() => setModal("guide")}>
             了解演示 <ArrowUpRight size={14} />
           </button>
@@ -547,6 +573,17 @@ export default function App() {
               <X size={16} />
             </button>
           </div>
+        )}
+
+        {view === "clinical" && (
+          <ClinicalWorkflow
+            onRecordsChanged={refreshRecords}
+            onUserChange={setActiveUser}
+            onArchived={(id) => {
+              setFocusedRecordId(id);
+              setView("dashboard");
+            }}
+          />
         )}
 
         {view === "overview" && (
@@ -1168,6 +1205,8 @@ export default function App() {
 
         {view === "dashboard" && (
           <DataDashboard
+            key={focusedRecordId}
+            focusedRecordId={focusedRecordId}
             studies={studies}
             records={records}
             onRefresh={refreshRecords}
@@ -1408,9 +1447,20 @@ export default function App() {
         </Modal>
       )}
       {modal === "guide" && (
-        <Modal title="几步，完成一份影像标注" onClose={() => setModal(null)}>
+        <Modal
+          title="从影像到报告，完成一次复核"
+          onClose={() => setModal(null)}
+        >
           <div className="guide-body">
             {[
+              {
+                title: "演示登录与影像准备",
+                text: "在 AI 辅助诊疗中选择演示账号，载入已标注示例、上传已标注图片，或进入标注界面。选择检查部位和关注病变类型。",
+              },
+              {
+                title: "AI 模拟分析与人工复核",
+                text: "开始分析后等待分阶段的演示过程，查看百分比报告；点击人工复核确认意见，记录复核人和时间，再到数据看板查看完整档案。AI 仅提供参考，所有百分比均为固定演示数据。",
+              },
               {
                 title: "加载与模拟分析",
                 text: "点击“开始分析”，选择内置示例或本地图片。分析接口返回固定提示，不进行真实影像推断。",
@@ -1455,8 +1505,22 @@ export default function App() {
         </Modal>
       )}
       {detail && (
-        <Modal title="影像标注档案" onClose={() => setDetail(null)} wide>
-          <RecordDetail record={detail} />
+        <Modal
+          title={detail.diagnosis ? "诊疗报告档案" : "影像标注档案"}
+          onClose={() => setDetail(null)}
+          wide
+        >
+          {detail.diagnosis ? (
+            <DiagnosticReport
+              record={detail}
+              onReviewed={(record) => {
+                setDetail(record);
+                void refreshRecords();
+              }}
+            />
+          ) : (
+            <RecordDetail record={detail} />
+          )}
         </Modal>
       )}
       {toast && (

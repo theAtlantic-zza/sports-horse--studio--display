@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowDownToLine,
   ArrowRight,
@@ -32,6 +32,7 @@ interface Props {
   onNew: () => void;
   onOpen: (id: string) => void;
   onResume: (studyId: string, recordId?: string) => void;
+  focusedRecordId?: string;
 }
 type Selection =
   | { kind: "study"; item: StudySummary }
@@ -45,9 +46,12 @@ export default function DataDashboard({
   onNew,
   onOpen,
   onResume,
+  focusedRecordId = "",
 }: Props) {
-  const [tab, setTab] = useState<"studies" | "records">("studies");
-  const [search, setSearch] = useState("");
+  const [tab, setTab] = useState<"studies" | "records" | "diagnoses">(
+    focusedRecordId ? "diagnoses" : "studies",
+  );
+  const [search, setSearch] = useState(focusedRecordId);
   const [status, setStatus] = useState("all");
   const [source, setSource] = useState("all");
   const [sort, setSort] = useState("createdAt");
@@ -64,6 +68,16 @@ export default function DataDashboard({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const reports = records.filter((record) => record.diagnosis);
+  const isFocused =
+    search === focusedRecordId &&
+    reports.some((record) => record.id === focusedRecordId);
+  useEffect(() => {
+    if (tab === "diagnoses" && reports.length === 0) {
+      setTab("records");
+      setStatus("all");
+    }
+  }, [reports.length, tab]);
 
   const annotations = records.flatMap((r) => r.annotations);
   const total = annotations.length;
@@ -105,13 +119,17 @@ export default function DataDashboard({
   const maximum = Math.max(2, ...days.flatMap((d) => [d.uploads, d.saved]));
   const rows = useMemo(() => {
     const values: (StudySummary | RecordSummary)[] =
-      tab === "studies" ? studies : records;
+      tab === "studies"
+        ? studies
+        : tab === "diagnoses"
+          ? records.filter((record) => record.diagnosis)
+          : records;
     return values
       .filter((item) => {
         const name =
           "name" in item
             ? item.name
-            : item.annotations.map((a) => a.lesion).join(" ");
+            : `${item.annotations.map((a) => a.lesion).join(" ")} ${item.diagnosis?.targetLesion || ""} ${item.diagnosis?.reviewer || ""}`;
         const matches =
           `${item.id} ${item.horseName} ${item.bodyPart} ${item.annotator} ${name}`
             .toLowerCase()
@@ -120,7 +138,9 @@ export default function DataDashboard({
           matches &&
           (source === "all" || item.source === source) &&
           (status === "all" ||
-            ("status" in item ? item.status : "annotated") === status)
+            ("status" in item
+              ? item.status
+              : item.diagnosis?.status || "annotated") === status)
         );
       })
       .sort((a, b) =>
@@ -190,14 +210,16 @@ export default function DataDashboard({
   }
 
   return (
-    <div className="page data-dashboard">
+    <div
+      className={`page data-dashboard${isFocused ? " focused-diagnosis" : ""}`}
+    >
       <div className="page-heading">
         <div>
           <span className="eyebrow">IMAGE DATA INTELLIGENCE</span>
           <h1>
             影像数据看板<span className="heading-dot">.</span>
           </h1>
-          <p>从影像上传到标注归档，让每一份数据清晰可循。</p>
+          <p>从影像到 AI 报告与人工复核，每一份记录都有据可循。</p>
         </div>
         <button className="button primary" onClick={onNew}>
           <Plus size={17} />
@@ -261,6 +283,28 @@ export default function DataDashboard({
           </div>
         ))}
       </div>
+      {reports.length > 0 && (
+        <div className="diagnosis-archive-summary" role="status">
+          <CheckCheck size={21} />
+          <div>
+            <strong>
+              {isFocused
+                ? `${focusedRecordId} · 诊疗记录已入库`
+                : "AI 报告与人工复核完整留存"}
+            </strong>
+            <span>影像、分析结果、复核意见与操作时间关联保存</span>
+          </div>
+          <span>{reports.length} 份报告</span>
+          <span>
+            {
+              reports.filter(
+                (record) => record.diagnosis?.status === "reviewed",
+              ).length
+            }{" "}
+            份已复核
+          </span>
+        </div>
+      )}
       <div className="dashboard-charts">
         <section className="panel trend-panel">
           <div className="chart-heading">
@@ -395,6 +439,17 @@ export default function DataDashboard({
           >
             标注记录 <span>{records.length}</span>
           </button>
+          {reports.length > 0 && (
+            <button
+              className={tab === "diagnoses" ? "active" : ""}
+              onClick={() => {
+                setTab("diagnoses");
+                reset();
+              }}
+            >
+              诊疗报告 <span>{reports.length}</span>
+            </button>
+          )}
         </div>
         <div className="dashboard-filters">
           <div className="search-field">
@@ -427,6 +482,12 @@ export default function DataDashboard({
                     {label}
                   </option>
                 ))}
+              {tab !== "studies" && (
+                <>
+                  <option value="pending">待复核</option>
+                  <option value="reviewed">已复核</option>
+                </>
+              )}
             </select>
           </div>
           <select
@@ -479,6 +540,7 @@ export default function DataDashboard({
                 <th>马匹 / 部位</th>
                 <th>状态</th>
                 <th>{tab === "studies" ? "标注关联" : "标注人"}</th>
+                {tab !== "studies" && <th>AI 辅助结果</th>}
                 <th>创建时间</th>
                 <th>操作</th>
               </tr>
@@ -491,7 +553,12 @@ export default function DataDashboard({
                   : { kind: "record", item };
                 const recordId = isStudy ? item.latestRecordId : item.id;
                 return (
-                  <tr key={item.id}>
+                  <tr
+                    key={item.id}
+                    className={
+                      item.id === focusedRecordId ? "focused-record" : ""
+                    }
+                  >
                     <td>
                       <button
                         className="record-name"
@@ -509,7 +576,7 @@ export default function DataDashboard({
                           <small className="image-filename">
                             {isStudy
                               ? item.name
-                              : `${item.studyId} · ${item.annotations.length} 处标注`}
+                              : `${item.studyId} · ${item.diagnosis ? "诊疗报告" : `${item.annotations.length} 处标注`}`}
                           </small>
                         </span>
                       </button>
@@ -520,10 +587,16 @@ export default function DataDashboard({
                     </td>
                     <td>
                       <span
-                        className={`status-badge ${isStudy ? item.status : "annotated"}`}
+                        className={`status-badge ${isStudy ? item.status : item.diagnosis?.status || "annotated"}`}
                       >
                         <i />
-                        {isStudy ? STATUS_LABELS[item.status] : "已归档"}
+                        {isStudy
+                          ? STATUS_LABELS[item.status]
+                          : item.diagnosis
+                            ? item.diagnosis.status === "reviewed"
+                              ? "已复核"
+                              : "待复核"
+                            : "已归档"}
                       </span>
                       <small className="row-source">
                         {item.source === "demo" ? "内置示例" : "本地上传"}
@@ -541,9 +614,31 @@ export default function DataDashboard({
                           </small>
                         </>
                       ) : (
-                        <span>{item.annotator}</span>
+                        <>
+                          <span>{item.annotator}</span>
+                          {item.diagnosis?.reviewer && (
+                            <small className="muted">
+                              复核：{item.diagnosis.reviewer}
+                            </small>
+                          )}
+                        </>
                       )}
                     </td>
+                    {!isStudy && (
+                      <td>
+                        {item.diagnosis ? (
+                          <span className="diagnosis-table-result">
+                            <strong>
+                              {item.diagnosis.scores[0].percentage}%
+                            </strong>
+                            {item.diagnosis.scores[0].lesion}
+                            <small>模拟结果 · 仅供参考</small>
+                          </span>
+                        ) : (
+                          <span className="muted">人工标注</span>
+                        )}
+                      </td>
+                    )}
                     <td className="record-date">
                       {formatTime(item.createdAt)}
                       <small className="muted">北京时间</small>
@@ -566,19 +661,21 @@ export default function DataDashboard({
                         >
                           <Pencil size={14} />
                         </button>
-                        <button
-                          className="action-icon"
-                          title="继续标注"
-                          aria-label={`继续标注 ${item.id}`}
-                          onClick={() =>
-                            onResume(
-                              isStudy ? item.id : item.studyId,
-                              recordId || undefined,
-                            )
-                          }
-                        >
-                          <ScanLine size={15} />
-                        </button>
+                        {!("diagnosis" in item && item.diagnosis) && (
+                          <button
+                            className="action-icon"
+                            title="继续标注"
+                            aria-label={`继续标注 ${item.id}`}
+                            onClick={() =>
+                              onResume(
+                                isStudy ? item.id : item.studyId,
+                                recordId || undefined,
+                              )
+                            }
+                          >
+                            <ScanLine size={15} />
+                          </button>
+                        )}
                         {recordId && (
                           <DownloadLink
                             id={recordId}
@@ -674,6 +771,18 @@ export default function DataDashboard({
                 {error}
               </p>
             )}
+            {edit.kind === "record" && edit.item.diagnosis && (
+              <p className="diagnosis-edit-note">
+                修改检查部位会清除旧 AI
+                报告及复核状态，需重新分析。修改马名或标注人会保留原报告。
+              </p>
+            )}
+            {edit.kind === "study" &&
+              reports.some((record) => record.studyId === edit.item.id) && (
+                <p className="diagnosis-edit-note">
+                  修改检查部位会清除关联 AI 报告及复核状态，需重新分析。
+                </p>
+              )}
             {(
               [
                 { key: "name", label: "影像名称" },

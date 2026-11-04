@@ -1,5 +1,5 @@
 import { chromium, expect } from "@playwright/test";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, rename, writeFile } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -8,6 +8,7 @@ import path from "node:path";
 const root = fileURLToPath(new URL("../", import.meta.url));
 const work = path.join(root, "work/midterm-video");
 const output = path.join(root, "public/demo/equivision-midterm-demo.mp4");
+const candidate = path.join(work, "encoded-candidate.mp4");
 const url = process.argv[2] || "http://127.0.0.1:4176/?presentation=1";
 const framesDirectory = path.join(work, "raw/frames");
 for (const directory of [work, path.join(work, "qa"), framesDirectory, path.dirname(output)])
@@ -83,18 +84,27 @@ async function scene(label, caption, duration, action) {
   scenes.push({ label, caption, duration, start, end: elapsed() });
   await page.screenshot({ path: path.join(work, `qa/${label}.png`) });
 }
-async function imagePoint(x, y) {
-  return page.getByTestId("annotation-canvas").evaluate((node, point) => {
-    const svg = node;
-    const result = new DOMPoint(svg.viewBox.baseVal.width * point.x, svg.viewBox.baseVal.height * point.y).matrixTransform(svg.getScreenCTM());
-    return { x: result.x, y: result.y };
-  }, { x, y });
+async function savedArchive() {
+  return page.evaluate(async () => {
+    const connection = await new Promise((resolve, reject) => {
+      const request = indexedDB.open("equivision-image-studio", 1);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const archive = await new Promise((resolve, reject) => {
+      const request = connection.transaction("archive").objectStore("archive").get("current");
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    connection.close();
+    return archive;
+  });
 }
 
 try {
   await page.goto(url, { waitUntil: "networkidle" });
   await page.evaluate(() => document.fonts.ready);
-  await expect(page.locator(".stat-value").first()).toContainText("05");
+  await expect(page.getByRole("button", { name: "登录工作台", exact: true })).toBeVisible();
   const recordingReady = new Promise((resolve) => {
     session.on("Page.screencastFrame", (frame) => {
       const filename = path.join(framesDirectory, `frame-${String(frames.length).padStart(5, "0")}.png`);
@@ -110,83 +120,94 @@ try {
   await page.mouse.move(mouse.x, mouse.y);
   await pause(300);
 
-  await scene("01-overview", "从一张影像，开始一次完整的标注记录", 2.1, async () => {
-    await pause(1400);
-    await moveTo(400, 570, 450);
+  await scene("01-login", "登录演示工作台，开始一次辅助诊疗", 2.0, async () => {
+    await pause(1100);
+    await click(page.getByRole("button", { name: "登录工作台", exact: true }));
+    await expect(page.getByRole("button", { name: "载入已标注示例", exact: true })).toBeVisible();
+    await pause(250);
+  });
+
+  await scene("02-input", "载入已标注影像，选择检查部位与病变类型", 3.5, async () => {
+    await click(page.getByRole("button", { name: "载入已标注示例", exact: true }));
+    const bodyPart = page.getByLabel("检查部位", { exact: true });
+    await expect(bodyPart).toBeVisible();
+    await click(bodyPart);
+    await page.keyboard.press("Escape");
+    await bodyPart.selectOption("左前肢 · 腕关节");
     await pause(350);
-  });
-
-  await scene("02-analysis", "选择内置示例，完成模拟分析", 3.0, async () => {
-    await click(page.getByRole("button", { name: "开始分析", exact: true }));
-    await expect(page.getByRole("dialog")).toBeVisible();
-    await pause(650);
-    await click(page.locator(".demo-file"));
-    await expect(page.getByText("模拟分析已完成", { exact: true })).toBeVisible();
-    await pause(600);
-  });
-
-  await scene("03-annotation", "填写病变类型与置信度，拖动鼠标标记关注区域", 4.4, async () => {
-    const lesion = page.getByLabel("病变类型", { exact: true });
+    const lesion = page.getByLabel("关注病变类型", { exact: true });
     await click(lesion);
     await page.keyboard.press("Escape");
     await lesion.selectOption("关节间隙异常");
-    await pause(350);
-    const slider = page.getByRole("slider", { name: "置信程度" });
-    await click(slider);
-    await slider.focus();
-    await page.keyboard.press("End");
-    for (let i = 0; i < 8; i++) await page.keyboard.press("ArrowLeft");
-    await expect(slider).toHaveValue("92");
-    await pause(300);
-    const start = await imagePoint(0.29, 0.25);
-    const end = await imagePoint(0.53, 0.43);
-    await moveTo(start.x, start.y, 450);
-    await page.mouse.down();
-    await moveTo(end.x, end.y, 1100);
-    await page.mouse.up();
-    await expect(page.locator("[data-shape-id]")).toHaveCount(1);
     await pause(650);
   });
 
-  await scene("04-confirmation", "核对标注人和标注信息，确认归档", 2.1, async () => {
-    await click(page.getByRole("button", { name: "确认并保存", exact: true }));
-    await expect(page.getByRole("dialog")).toContainText("王一伊");
-    await pause(1250);
-    await click(page.getByRole("button", { name: "确认保存标注", exact: true }));
-    await expect(page.getByRole("dialog")).toHaveAccessibleName("影像标注档案");
+  await scene("03-thinking", "AI 辅助分析：读取影像、评估病变、生成报告", 3.0, async () => {
+    const analysisStarted = Date.now();
+    await click(page.getByRole("button", { name: "开始 AI 辅助分析", exact: true }));
+    await expect(page.getByTestId("diagnosis-thinking")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "AI 辅助诊疗报告", exact: true })).toBeVisible({ timeout: 15000 });
+    expect(Date.now() - analysisStarted).toBeGreaterThan(4300);
   });
 
-  await scene("05-archive", "原图与标注结果一同留存，按编号下载", 4.4, async () => {
-    await expect(page.getByRole("dialog")).toContainText("EV-000006");
-    await expect(page.getByRole("img", { name: "保存的标注结果图片" })).toBeVisible();
-    await pause(1900);
-    const downloadEvent = page.waitForEvent("download");
-    await click(page.getByRole("link", { name: "下载标注图片", exact: true }));
-    const download = await downloadEvent;
-    await download.saveAs(path.join(work, "qa/recorded-annotation.png"));
-    const png = await readFile(path.join(work, "qa/recorded-annotation.png"));
-    expect(png.readUInt32BE(16)).toBe(1183);
-    expect(png.readUInt32BE(20)).toBe(1024);
-    await pause(950);
+  await scene("04-report", "病变倾向以百分比呈现，AI 仅提供参考", 4.0, async () => {
+    await expect(page.locator(".diagnostic-primary > strong")).toContainText("82%");
+    await expect(page.locator(".diagnostic-disclaimer").getByText("AI 仅提供参考，最终结论由人工复核确认。", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "人工复核", exact: true })).toBeVisible();
+    await moveTo(1300, 430, 700);
+    await pause(2500);
   });
 
-  await scene("06-dashboard", "编号归档、统计看板与记录管理，形成完整闭环", 3.0, async () => {
-    await click(page.getByRole("button", { name: "关闭对话框", exact: true }), 250);
-    await click(page.getByRole("button", { name: "数据看板", exact: true }), 300);
+  await scene("05-review", "人工复核分析结果，确认意见并归档", 3.5, async () => {
+    await click(page.getByRole("button", { name: "人工复核", exact: true }));
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    await dialog.getByLabel("复核人", { exact: true }).selectOption("朱诗嘉");
+    await dialog.getByLabel("复核意见", { exact: true }).fill("已复核影像、检查部位与分析结果，确认本次演示报告。");
+    await pause(1100);
+    await click(dialog.getByRole("button", { name: "确认复核并归档", exact: true }));
+    await expect(dialog).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "查看数据看板", exact: true })).toBeVisible();
+    await pause(450);
+  });
+
+  await scene("06-dashboard", "诊疗报告与复核信息，按编号留存在数据看板", 3.5, async () => {
+    await click(page.getByRole("button", { name: "查看数据看板", exact: true }));
     await expect(page.locator(".dashboard-metric").first()).toContainText("09");
     await expect(page.locator(".dashboard-metric").nth(2)).toContainText("06");
-    await pause(550);
-    await click(page.getByRole("button", { name: "标注记录 6", exact: true }), 250);
-    await expect(page.locator(".dashboard-table")).toContainText("EV-000006");
-    await expect(page.locator(".dashboard-table")).toContainText("王一伊");
-    await page.locator(".dashboard-table tbody tr").first().scrollIntoViewIfNeeded();
-    await pause(1450);
+    const table = page.locator(".dashboard-table");
+    await expect(table).toContainText("EV-000006");
+    await expect(table).toContainText("82%");
+    await expect(table).toContainText("已复核");
+    await expect(table).toContainText("朱诗嘉");
+    await pause(700);
+    await table.locator("tbody tr").first().scrollIntoViewIfNeeded();
+    await pause(1850);
   });
   expect(errors).toEqual([]);
-  await pause(200);
-} finally {
+  await pause(250);
   await session.send("Page.stopScreencast");
   await Promise.all(writes);
+  let archive = await savedArchive();
+  expect(archive.studies).toHaveLength(9);
+  expect(archive.records).toHaveLength(6);
+  let record = archive.records.find((item) => item.id === "EV-000006");
+  expect(record.studyId).toBe("IMG-000009");
+  expect(record.diagnosis.status).toBe("reviewed");
+  expect(record.diagnosis.reviewer).toBe("朱诗嘉");
+  expect(record.diagnosis.scores[0].percentage).toBe(82);
+  await page.reload({ waitUntil: "networkidle" });
+  archive = await savedArchive();
+  record = archive.records.find((item) => item.id === "EV-000006");
+  expect(record.diagnosis.status).toBe("reviewed");
+  await writeFile(path.join(work, "qa/workflow-verification.json"), JSON.stringify({
+    studies: archive.studies.length,
+    records: archive.records.length,
+    record: { id: record.id, studyId: record.studyId, annotator: record.annotator, diagnosis: record.diagnosis },
+    persistedAfterReload: true,
+    browserErrors: errors,
+  }, null, 2));
+} finally {
   await context.close();
 }
 
@@ -214,15 +235,16 @@ for (const [index, scene] of scenes.entries()) {
   filters.push(`[b${index}][${index + 1}:v]overlay=0:1008:shortest=1[s${index}]`);
 }
 filters.push(`${scenes.map((_, i) => `[s${i}]`).join("")}concat=n=${scenes.length}:v=1:a=0,format=yuv420p[v]`);
-execFileSync("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", ...inputs, "-filter_complex", filters.join(";"), "-map", "[v]", "-an", "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-movflags", "+faststart", "-t", "19", output], { stdio: "inherit" });
-const metadata = JSON.parse(execFileSync("ffprobe", ["-v", "error", "-show_streams", "-show_format", "-of", "json", output], { encoding: "utf8" }));
+execFileSync("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", ...inputs, "-filter_complex", filters.join(";"), "-map", "[v]", "-an", "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-movflags", "+faststart", "-t", "19.5", candidate], { stdio: "inherit" });
+const metadata = JSON.parse(execFileSync("ffprobe", ["-v", "error", "-show_streams", "-show_format", "-of", "json", candidate], { encoding: "utf8" }));
 const stream = metadata.streams.find((item) => item.codec_type === "video");
 expect(stream.width).toBe(1920);
 expect(stream.height).toBe(1080);
 expect(stream.pix_fmt).toBe("yuv420p");
-expect(Number(metadata.format.duration)).toBeGreaterThanOrEqual(18.8);
-expect(Number(metadata.format.duration)).toBeLessThanOrEqual(19.1);
+expect(Number(metadata.format.duration)).toBeGreaterThanOrEqual(19.3);
+expect(Number(metadata.format.duration)).toBeLessThanOrEqual(19.6);
 await writeFile(path.join(work, "qa/video-metadata.json"), JSON.stringify(metadata, null, 2));
-for (const seconds of [1, 4, 8, 11, 14, 18])
-  execFileSync("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-ss", String(seconds), "-i", output, "-frames:v", "1", "-update", "1", path.join(work, `qa/frame-${seconds}s.png`)]);
+for (const seconds of [1, 4, 7, 10, 14, 18])
+  execFileSync("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-ss", String(seconds), "-i", candidate, "-frames:v", "1", "-update", "1", path.join(work, `qa/frame-${seconds}s.png`)]);
+await rename(candidate, output);
 console.log(JSON.stringify({ output, duration: metadata.format.duration, width: stream.width, height: stream.height, workflowVerified: true, browserErrors: errors }, null, 2));

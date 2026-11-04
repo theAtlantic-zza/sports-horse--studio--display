@@ -9,8 +9,13 @@ import {
   migrateDemoAnnotators,
 } from "../shared/archive.ts";
 import type { AnnotationRecord, ArchiveState } from "../shared/types.ts";
+import { DIAGNOSIS_DELAY_MS } from "../shared/types.ts";
 
-export async function createApp(dataDirectory: string, analysisDelay = 900) {
+export async function createApp(
+  dataDirectory: string,
+  analysisDelay = 900,
+  diagnosisDelay = DIAGNOSIS_DELAY_MS,
+) {
   await mkdir(dataDirectory, { recursive: true });
   const file = path.join(dataDirectory, "image-archive.json");
   let state = emptyArchive();
@@ -108,6 +113,10 @@ export async function createApp(dataDirectory: string, analysisDelay = 900) {
     await new Promise((resolve) => setTimeout(resolve, analysisDelay));
     res.json(await commit(() => archive.analyze(req.params.id)));
   });
+  app.post("/api/studies/:id/diagnose", async (req, res) => {
+    await new Promise((resolve) => setTimeout(resolve, diagnosisDelay));
+    res.json(await commit(() => archive.diagnose(req.params.id, req.body)));
+  });
   app.get("/api/records", (_req, res) => res.json(archive.records()));
   app.post("/api/records", async (req, res) =>
     res.status(201).json(await commit(() => archive.save(req.body))),
@@ -117,6 +126,9 @@ export async function createApp(dataDirectory: string, analysisDelay = 900) {
   );
   app.patch("/api/records/:id", async (req, res) =>
     res.json(await commit(() => archive.updateRecord(req.params.id, req.body))),
+  );
+  app.post("/api/records/:id/review", async (req, res) =>
+    res.json(await commit(() => archive.reviewRecord(req.params.id, req.body))),
   );
   app.delete("/api/records/:id", async (req, res) =>
     res.json(await commit(() => archive.deleteRecord(req.params.id))),

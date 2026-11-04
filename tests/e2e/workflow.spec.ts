@@ -31,7 +31,7 @@ async function drag(
 }
 
 async function demo(page: Page) {
-  await page.goto("/");
+  await page.goto("/#overview");
   await page.getByRole("button", { name: "体验内置示例", exact: true }).click();
   await expect(page.getByText("模拟分析已完成", { exact: true })).toBeVisible();
 }
@@ -39,7 +39,7 @@ async function demo(page: Page) {
 test("dashboard, guide, empty workspace and file picker", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto("/");
+  await page.goto("/#overview");
   await expect(
     page.getByRole("heading", { name: "影像标注工作台." }),
   ).toBeVisible();
@@ -206,7 +206,7 @@ test("moving a region, undo, zoom alignment, label visibility and deletion", asy
 test("local image upload, invalid-file feedback and empty author validation", async ({
   page,
 }) => {
-  await page.goto("/");
+  await page.goto("/#overview");
   await page.getByRole("button", { name: "新建标注", exact: true }).click();
   await page
     .getByLabel("上传本地影像文件")
@@ -286,7 +286,7 @@ test("mobile and tablet layouts keep primary interactions in view", async ({
     { width: 820, height: 1180 },
   ]) {
     await page.setViewportSize(size);
-    await page.goto("/");
+    await page.goto("/#overview");
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= window.innerWidth,

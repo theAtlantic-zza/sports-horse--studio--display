@@ -338,3 +338,368 @@ describe("mock API and persistent annotation archive", () => {
       );
   });
 });
+
+describe("mock diagnostic reports and human review", () => {
+  let diagnosticServer: Server;
+  let diagnosticBase: string;
+  let diagnosticDirectory: string;
+  let uploadedId: string;
+  let pendingReport: Record<string, unknown>;
+  let diagnosisRecordId: string;
+  let createdAt: string;
+  const bodyPart = "左前肢 · 腕关节";
+  const input = {
+    bodyPart,
+    targetLesion: "关节间隙异常",
+    inputMode: "annotated",
+  };
+  const diagnosticPayload = (extra = {}) => ({
+    ...payload(),
+    studyId: uploadedId,
+    bodyPart,
+    annotator: "王一伊",
+    annotations: [],
+    diagnosis: pendingReport,
+    ...extra,
+  });
+  const fields = (extra = {}) => ({
+    horseName: "测试马匹",
+    bodyPart,
+    annotator: "王一伊",
+    ...extra,
+  });
+  async function launch() {
+    const app = await createApp(diagnosticDirectory, 0, 0);
+    diagnosticServer = app.listen(0, "127.0.0.1");
+    await new Promise<void>((resolve) =>
+      diagnosticServer.on("listening", resolve),
+    );
+    diagnosticBase = `http://127.0.0.1:${(diagnosticServer.address() as { port: number }).port}`;
+  }
+  before(async () => {
+    await mkdir("work/qa/diagnosis", { recursive: true });
+    diagnosticDirectory = await mkdtemp(path.resolve("work/qa/diagnosis/api-"));
+    await launch();
+    uploadedId = (
+      await (await fetch(`${diagnosticBase}/api/studies`, json(image))).json()
+    ).id;
+  });
+  after(async () => {
+    await new Promise<void>((resolve) =>
+      diagnosticServer.close(() => resolve()),
+    );
+    await rm(diagnosticDirectory, { recursive: true });
+  });
+
+  it("generates an explicitly simulated distribution for the chosen body part and lesion", async () => {
+    const response = await fetch(
+      `${diagnosticBase}/api/studies/${uploadedId}/diagnose`,
+      json(input),
+    );
+    assert.equal(response.status, 200);
+    pendingReport = await response.json();
+    assert.equal(pendingReport.mock, true);
+    assert.equal(pendingReport.bodyPart, bodyPart);
+    assert.equal(pendingReport.targetLesion, "关节间隙异常");
+    assert.equal(pendingReport.status, "pending");
+    assert.equal(pendingReport.reviewedAt, null);
+    assert.deepEqual(
+      (pendingReport.scores as { percentage: number }[]).map(
+        (score) => score.percentage,
+      ),
+      [82, 12, 6],
+    );
+    assert.match(String(pendingReport.finding), /固定示例/);
+    assert.match(String(pendingReport.recommendation), /AI 仅提供参考/);
+    assert.equal(
+      (
+        await (
+          await fetch(`${diagnosticBase}/api/studies/${uploadedId}`)
+        ).json()
+      ).status,
+      "analyzed",
+    );
+    for (const invalid of [
+      {},
+      { ...input, bodyPart: "不存在的部位" },
+      { ...input, targetLesion: "未知病变" },
+      { ...input, inputMode: "remote" },
+    ]) {
+      assert.equal(
+        (
+          await fetch(
+            `${diagnosticBase}/api/studies/${uploadedId}/diagnose`,
+            json(invalid),
+          )
+        ).status,
+        400,
+      );
+    }
+    assert.equal(
+      (
+        await fetch(
+          `${diagnosticBase}/api/studies/missing/diagnose`,
+          json(input),
+        )
+      ).status,
+      404,
+    );
+  });
+
+  it("saves a pre-annotated image and report without inventing editable annotation geometry", async () => {
+    const response = await fetch(
+      `${diagnosticBase}/api/records`,
+      json(diagnosticPayload()),
+    );
+    assert.equal(response.status, 201);
+    const record = await response.json();
+    diagnosisRecordId = record.id;
+    createdAt = record.createdAt;
+    assert.deepEqual(record.annotations, []);
+    assert.deepEqual(record.diagnosis, pendingReport);
+    assert.equal(record.original.dataUrl, png);
+    assert.equal(record.annotatedImage, png);
+    const listing = await (await fetch(`${diagnosticBase}/api/records`)).json();
+    assert.equal(listing[0].diagnosis.status, "pending");
+    assert.equal(listing[0].original, undefined);
+  });
+
+  it("rejects invalid percentages, mismatched body parts and forged review status", async () => {
+    const invalidReports = [
+      { ...pendingReport, mock: false },
+      { ...pendingReport, bodyPart: "右前肢 · 腕关节" },
+      { ...pendingReport, generatedAt: "invalid-time" },
+      { ...pendingReport, finding: "" },
+      { ...pendingReport, status: "reviewed" },
+      { ...pendingReport, reviewer: "伪造复核人" },
+      { ...pendingReport, reviewedAt: new Date().toISOString() },
+      { ...pendingReport, scores: [] },
+      {
+        ...pendingReport,
+        scores: [{ lesion: "关节间隙异常", percentage: 101 }],
+      },
+      {
+        ...pendingReport,
+        scores: [{ lesion: "关节间隙异常", percentage: 80 }],
+      },
+      { ...pendingReport, scores: [{ lesion: "未知病变", percentage: 100 }] },
+      {
+        ...pendingReport,
+        scores: [
+          { lesion: "关节间隙异常", percentage: 50 },
+          { lesion: "关节间隙异常", percentage: 50 },
+        ],
+      },
+      { ...pendingReport, inputMode: "manual" },
+    ];
+    for (const diagnosis of invalidReports) {
+      assert.equal(
+        (
+          await fetch(
+            `${diagnosticBase}/api/records`,
+            json(diagnosticPayload({ diagnosis })),
+          )
+        ).status,
+        400,
+      );
+    }
+    assert.equal(
+      (
+        await fetch(
+          `${diagnosticBase}/api/records`,
+          json(diagnosticPayload({ diagnosis: undefined })),
+        )
+      ).status,
+      400,
+    );
+    assert.equal(
+      (await (await fetch(`${diagnosticBase}/api/records`)).json()).length,
+      1,
+    );
+  });
+
+  it("persists reviewer, conclusion and time without changing the original record after restart", async () => {
+    for (const invalid of [
+      { reviewer: "", conclusion: "已复核" },
+      { reviewer: "朱诗嘉", conclusion: " " },
+    ]) {
+      assert.equal(
+        (
+          await fetch(
+            `${diagnosticBase}/api/records/${diagnosisRecordId}/review`,
+            json(invalid),
+          )
+        ).status,
+        400,
+      );
+    }
+    const reviewed = await fetch(
+      `${diagnosticBase}/api/records/${diagnosisRecordId}/review`,
+      json({
+        reviewer: "朱诗嘉",
+        conclusion: "已核对部位与标注，保留模拟分析结论。",
+      }),
+    );
+    assert.equal(reviewed.status, 200);
+    const record = await reviewed.json();
+    assert.equal(record.id, diagnosisRecordId);
+    assert.equal(record.createdAt, createdAt);
+    assert.equal(record.diagnosis.status, "reviewed");
+    assert.equal(record.diagnosis.reviewer, "朱诗嘉");
+    assert.ok(
+      Math.abs(Date.now() - Date.parse(record.diagnosis.reviewedAt)) < 5000,
+    );
+    const reviewedAt = record.diagnosis.reviewedAt;
+    await new Promise<void>((resolve) =>
+      diagnosticServer.close(() => resolve()),
+    );
+    await launch();
+    const restored = await (
+      await fetch(`${diagnosticBase}/api/records/${diagnosisRecordId}`)
+    ).json();
+    assert.equal(restored.diagnosis.reviewedAt, reviewedAt);
+    assert.equal(
+      restored.diagnosis.reviewConclusion,
+      "已核对部位与标注，保留模拟分析结论。",
+    );
+    assert.equal(
+      (
+        await fetch(
+          `${diagnosticBase}/api/records/${diagnosisRecordId}/review`,
+          json({ reviewer: "王一伊", conclusion: "重复" }),
+        )
+      ).status,
+      400,
+    );
+  });
+
+  it("keeps report snapshots for name edits but removes stale reports when the body part changes", async () => {
+    const metadataEdit = await fetch(
+      `${diagnosticBase}/api/records/${diagnosisRecordId}`,
+      { ...json(fields({ horseName: "更新马匹名称" })), method: "PATCH" },
+    );
+    assert.equal(metadataEdit.status, 200);
+    assert.equal((await metadataEdit.json()).diagnosis.status, "reviewed");
+    const response = await fetch(
+      `${diagnosticBase}/api/records/${diagnosisRecordId}`,
+      { ...json(fields({ bodyPart: "右前肢 · 腕关节" })), method: "PATCH" },
+    );
+    assert.equal(response.status, 200);
+    const changed = await response.json();
+    assert.equal(changed.id, diagnosisRecordId);
+    assert.equal(changed.diagnosis, undefined);
+    assert.equal(changed.original.dataUrl, png);
+    assert.equal(
+      (
+        await fetch(
+          `${diagnosticBase}/api/records/${diagnosisRecordId}/review`,
+          json({ reviewer: "王一伊", conclusion: "旧结果" }),
+        )
+      ).status,
+      400,
+    );
+  });
+
+  it("invalidates manual report review after annotation edits and preserves legacy annotation behavior", async () => {
+    const report = await (
+      await fetch(
+        `${diagnosticBase}/api/studies/${uploadedId}/diagnose`,
+        json({ ...input, inputMode: "manual" }),
+      )
+    ).json();
+    const record = await (
+      await fetch(
+        `${diagnosticBase}/api/records`,
+        json(
+          diagnosticPayload({ annotations: [annotation], diagnosis: report }),
+        ),
+      )
+    ).json();
+    assert.ok(record.id);
+    await fetch(
+      `${diagnosticBase}/api/records/${record.id}/review`,
+      json({ reviewer: "李其杭", conclusion: "人工确认示例区域。" }),
+    );
+    const changed = await fetch(`${diagnosticBase}/api/records/${record.id}`, {
+      ...json({
+        ...fields(),
+        annotations: [{ ...annotation, confidence: 92 }],
+        annotatedImage: png,
+      }),
+      method: "PATCH",
+    });
+    assert.equal(changed.status, 200);
+    assert.equal((await changed.json()).diagnosis, undefined);
+    const legacy = await fetch(
+      `${diagnosticBase}/api/records`,
+      json(
+        diagnosticPayload({ annotations: [annotation], diagnosis: undefined }),
+      ),
+    );
+    assert.equal(legacy.status, 201);
+    assert.equal((await legacy.json()).diagnosis, undefined);
+  });
+
+  it("invalidates all linked reports consistently when an image body part changes", async () => {
+    const id = (
+      await (await fetch(`${diagnosticBase}/api/studies`, json(image))).json()
+    ).id;
+    async function saveForPart(part: string) {
+      const report = await (
+        await fetch(
+          `${diagnosticBase}/api/studies/${id}/diagnose`,
+          json({ ...input, bodyPart: part }),
+        )
+      ).json();
+      const response = await fetch(
+        `${diagnosticBase}/api/records`,
+        json(
+          diagnosticPayload({ studyId: id, bodyPart: part, diagnosis: report }),
+        ),
+      );
+      assert.equal(response.status, 201);
+      return response.json();
+    }
+    const first = await saveForPart(bodyPart);
+    const second = await saveForPart(bodyPart);
+    const reviewed = await fetch(
+      `${diagnosticBase}/api/records/${first.id}/review`,
+      json({ reviewer: "朱诗嘉", conclusion: "已核对演示区域。" }),
+    );
+    assert.equal(reviewed.status, 200);
+    const otherPart = "右前肢 · 腕关节";
+    const response = await fetch(`${diagnosticBase}/api/studies/${id}`, {
+      ...json({ ...fields({ bodyPart: otherPart }), name: image.name }),
+      method: "PATCH",
+    });
+    assert.equal(response.status, 200);
+    for (const record of [first, second]) {
+      const restored = await (
+        await fetch(`${diagnosticBase}/api/records/${record.id}`)
+      ).json();
+      assert.equal(restored.diagnosis, undefined);
+      assert.equal(restored.original.dataUrl, png);
+      assert.equal(restored.createdAt, record.createdAt);
+    }
+    const third = await saveForPart(otherPart);
+    const fourth = await saveForPart(otherPart);
+    const edit = await fetch(`${diagnosticBase}/api/records/${third.id}`, {
+      ...json(fields()),
+      method: "PATCH",
+    });
+    assert.equal(edit.status, 200);
+    assert.equal(
+      (await (await fetch(`${diagnosticBase}/api/records/${fourth.id}`)).json())
+        .diagnosis,
+      undefined,
+    );
+    const fifth = await saveForPart(bodyPart);
+    const sixth = await saveForPart(otherPart);
+    assert.equal(
+      (await (await fetch(`${diagnosticBase}/api/records/${fifth.id}`)).json())
+        .diagnosis,
+      undefined,
+    );
+    assert.equal(sixth.diagnosis.bodyPart, otherPart);
+  });
+});

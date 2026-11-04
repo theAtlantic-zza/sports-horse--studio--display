@@ -1,4 +1,4 @@
-import { ANNOTATORS, LESIONS } from "./types.ts";
+import { ANNOTATORS, BODY_PARTS, LESIONS } from "./types.ts";
 import type {
   Annotation,
   AnnotationRecord,
@@ -12,6 +12,9 @@ import type {
   StudySummary,
   StudyUpdate,
   AnalysisResult,
+  DiagnosisInput,
+  DiagnosisReport,
+  DiagnosisReview,
 } from "./types.ts";
 
 export class ArchiveError extends Error {
@@ -110,10 +113,11 @@ function metadata(value: RecordMetadata) {
 }
 function geometry(
   value: Pick<SaveRecordInput, "annotations" | "annotatedImage">,
+  alreadyAnnotated = false,
 ) {
   if (
     !Array.isArray(value.annotations) ||
-    !value.annotations.length ||
+    (!alreadyAnnotated && !value.annotations.length) ||
     value.annotations.length > 50 ||
     !value.annotations.every(validAnnotation) ||
     new Set(value.annotations.map((a) => a.id)).size !==
@@ -123,9 +127,72 @@ function geometry(
     throw new ArchiveError("请完善至少一处有效标注和标注图片。");
 }
 
+function diagnosisInput(value: DiagnosisInput) {
+  if (
+    !value ||
+    !BODY_PARTS.some((part) => part === value.bodyPart) ||
+    !LESIONS.includes(value.targetLesion) ||
+    !["annotated", "manual"].includes(value.inputMode)
+  )
+    throw new ArchiveError("请选择有效的检查部位、病变类型和影像来源。");
+}
+
+function diagnosis(value: DiagnosisReport, bodyPart: string) {
+  diagnosisInput(value);
+  if (
+    value.mock !== true ||
+    value.bodyPart !== bodyPart ||
+    !text(value.model, 80) ||
+    typeof value.generatedAt !== "string" ||
+    !Number.isFinite(Date.parse(value.generatedAt)) ||
+    !text(value.finding, 1000) ||
+    !text(value.recommendation, 1000) ||
+    value.status !== "pending" ||
+    value.reviewer !== null ||
+    value.reviewedAt !== null ||
+    value.reviewConclusion !== null ||
+    !Array.isArray(value.scores) ||
+    value.scores.length < 1 ||
+    value.scores.length > LESIONS.length ||
+    value.scores.some(
+      (score) =>
+        !score ||
+        !LESIONS.includes(score.lesion) ||
+        !Number.isFinite(score.percentage) ||
+        score.percentage < 0 ||
+        score.percentage > 100,
+    ) ||
+    new Set(value.scores.map((score) => score.lesion)).size !==
+      value.scores.length ||
+    value.scores[0].lesion !== value.targetLesion ||
+    Math.abs(
+      value.scores.reduce((sum, score) => sum + score.percentage, 0) - 100,
+    ) > 0.001
+  )
+    throw new ArchiveError(
+      "诊疗报告数据无效。请重新分析，并通过人工复核流程确认。",
+    );
+}
+
 // Shared demo rules for Express persistence and the hosted IndexedDB demo.
 export class Archive {
   constructor(public state: ArchiveState = emptyArchive()) {}
+  private invalidateStudyDiagnoses(
+    studyId: string,
+    bodyPart: string,
+    time: string,
+  ) {
+    for (const record of this.state.records) {
+      if (
+        record.studyId === studyId &&
+        record.diagnosis &&
+        record.diagnosis.bodyPart !== bodyPart
+      ) {
+        delete record.diagnosis;
+        record.updatedAt = time;
+      }
+    }
+  }
   studies(): StudySummary[] {
     return this.state.studies.map(({ image, ...study }) => {
       const linked = this.state.records.filter((r) => r.studyId === study.id);
@@ -195,12 +262,44 @@ export class Archive {
       },
     };
   }
+  diagnose(id: string, input: DiagnosisInput): DiagnosisReport {
+    const study = this.study(id);
+    diagnosisInput(input);
+    const time = now();
+    if (study.status === "uploaded") study.status = "analyzed";
+    study.updatedAt = time;
+    const alternatives = LESIONS.filter(
+      (lesion) => lesion !== input.targetLesion,
+    );
+    return {
+      mock: true,
+      model: "EQUIVISION Assist · DEMO",
+      generatedAt: time,
+      bodyPart: input.bodyPart,
+      targetLesion: input.targetLesion,
+      inputMode: input.inputMode,
+      scores: [
+        { lesion: input.targetLesion, percentage: 82 },
+        { lesion: alternatives[0], percentage: 12 },
+        { lesion: alternatives[1], percentage: 6 },
+      ],
+      finding: `演示分析将“${input.targetLesion}”列为主要关注项，需由人工结合影像复核。百分比为固定示例分布，并非真实患病概率。`,
+      recommendation:
+        "AI 仅提供参考。请结合病史与临床检查人工复核，具体诊疗方案由专业人员确认；本报告为流程演示，不用于临床诊断。",
+      status: "pending",
+      reviewer: null,
+      reviewedAt: null,
+      reviewConclusion: null,
+    };
+  }
   updateStudy(id: string, value: StudyUpdate) {
     const study = this.study(id);
     const fields = metadata(value);
     if (!text(value.name, 200))
       throw new ArchiveError("请输入影像名称（最多 200 字）。");
-    Object.assign(study, fields, { updatedAt: now() });
+    const time = now();
+    this.invalidateStudyDiagnoses(study.id, fields.bodyPart, time);
+    Object.assign(study, fields, { updatedAt: time });
     study.image.name = value.name.trim();
     return study;
   }
@@ -226,7 +325,9 @@ export class Archive {
   save(value: SaveRecordInput): AnnotationRecord {
     const study = this.study(value?.studyId);
     const fields = metadata(value);
-    geometry(value);
+    if (value.diagnosis !== undefined)
+      diagnosis(value.diagnosis, fields.bodyPart);
+    geometry(value, value.diagnosis?.inputMode === "annotated");
     const time = now();
     const record: AnnotationRecord = {
       id: number("EV", this.state.nextRecordNumber++),
@@ -237,15 +338,27 @@ export class Archive {
       ...fields,
       annotations: value.annotations,
       annotatedImage: value.annotatedImage,
+      ...(value.diagnosis
+        ? { diagnosis: structuredClone(value.diagnosis) }
+        : {}),
     };
     this.state.records.unshift(record);
+    this.invalidateStudyDiagnoses(study.id, fields.bodyPart, time);
     Object.assign(study, fields, { status: "annotated", updatedAt: time });
     return record;
   }
   updateRecord(id: string, value: RecordUpdate) {
     const record = this.record(id);
     const fields = metadata(value);
-    if (value.annotations !== undefined || value.annotatedImage !== undefined) {
+    const hasGeometry =
+      value.annotations !== undefined || value.annotatedImage !== undefined;
+    const diagnosisChanged =
+      record.bodyPart !== fields.bodyPart ||
+      (hasGeometry &&
+        (JSON.stringify(value.annotations) !==
+          JSON.stringify(record.annotations) ||
+          value.annotatedImage !== record.annotatedImage));
+    if (hasGeometry) {
       geometry({
         annotations: value.annotations!,
         annotatedImage: value.annotatedImage!,
@@ -253,10 +366,39 @@ export class Archive {
       record.annotations = value.annotations!;
       record.annotatedImage = value.annotatedImage!;
     }
+    // A report and its review apply only to the exact image region and body part.
+    if (diagnosisChanged) delete record.diagnosis;
     Object.assign(record, fields, { updatedAt: now() });
+    this.invalidateStudyDiagnoses(
+      record.studyId,
+      fields.bodyPart,
+      record.updatedAt,
+    );
     Object.assign(this.study(record.studyId), fields, {
       updatedAt: record.updatedAt,
     });
+    return record;
+  }
+  reviewRecord(id: string, value: DiagnosisReview): AnnotationRecord {
+    const record = this.record(id);
+    if (!record.diagnosis)
+      throw new ArchiveError(
+        "此记录没有可复核的诊疗报告，请重新进行辅助分析。",
+      );
+    if (!value || !text(value.reviewer) || !text(value.conclusion, 1000))
+      throw new ArchiveError("请填写复核人和人工复核结论。");
+    if (record.diagnosis.status === "reviewed")
+      throw new ArchiveError("此报告已完成复核，无需重复提交。");
+    const time = now();
+    record.diagnosis = {
+      ...record.diagnosis,
+      status: "reviewed",
+      reviewer: value.reviewer.trim(),
+      reviewedAt: time,
+      reviewConclusion: value.conclusion.trim(),
+    };
+    record.updatedAt = time;
+    this.study(record.studyId).updatedAt = time;
     return record;
   }
   deleteRecord(id: string) {
