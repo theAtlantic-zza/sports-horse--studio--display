@@ -1,0 +1,141 @@
+.presentation-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 10px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.presentation-toggle[aria-pressed="true"] {
+  color: var(--green);
+  background: var(--pale);
+}
+
+@media (min-width: 1200px) and (min-height: 720px) {
+  .presentation-mode .topbar {
+    height: 48px;
+  }
+  .presentation-mode .demo-banner {
+    display: none;
+  }
+  .presentation-mode .page {
+    padding: 22px 28px;
+  }
+  .presentation-mode .page-heading {
+    margin-bottom: 20px;
+  }
+  .presentation-mode .workspace-page {
+    display: flex;
+    flex-direction: column;
+  }
+  .presentation-mode .workspace-heading {
+    margin-bottom: 14px;
+  }
+  .presentation-mode .workspace-heading .eyebrow {
+    display: none;
+  }
+  .presentation-mode .workspace-heading p {
+    margin-top: 6px;
+  }
+  .presentation-mode .studio-progress {
+    max-width: none;
+    margin-bottom: 14px;
+    font-size: 12px;
+  }
+  .presentation-mode .study-info {
+    margin: 0 0 14px;
+    padding: 10px 16px;
+  }
+  .presentation-mode .study-info label,
+  .presentation-mode .study-info label > input {
+    font-size: 12px;
+  }
+  .presentation-mode .studio-layout {
+    grid-template-columns: minmax(0, 1fr) 320px;
+    align-items: stretch;
+    height: calc(100dvh - 295px);
+    min-height: 425px;
+  }
+  .presentation-mode .viewer-panel {
+    display: flex;
+    flex-direction: column;
+  }
+  .presentation-mode .viewer-header,
+  .presentation-mode .viewer-toolbar,
+  .presentation-mode .viewer-hint {
+    flex-shrink: 0;
+  }
+  .presentation-mode .canvas-container {
+    flex: 1;
+    min-height: 0;
+  }
+  .presentation-mode .image-viewport {
+    height: 100%;
+    padding: 12px;
+  }
+  .presentation-mode .annotation-panel {
+    overflow-y: auto;
+  }
+  .presentation-mode .annotation-panel-heading {
+    padding: 12px 16px;
+  }
+  .presentation-mode .analysis-status {
+    margin: 10px 14px;
+    padding: 8px;
+  }
+  .presentation-mode .analysis-status strong,
+  .presentation-mode .properties-form label,
+  .presentation-mode .properties-form select,
+  .presentation-mode .annotation-select strong {
+    font-size: 12px;
+  }
+  .presentation-mode .sample-suggestion {
+    padding-bottom: 0;
+  }
+  .presentation-mode .properties-title {
+    margin: 10px 17px;
+  }
+  .presentation-mode .properties-form label {
+    margin-bottom: 12px;
+  }
+  .presentation-mode .properties-form textarea {
+    min-height: 42px;
+    height: 42px;
+    padding: 6px 9px;
+  }
+  .presentation-mode .annotation-list {
+    min-height: 0;
+    padding-bottom: 8px;
+  }
+  .presentation-mode .no-annotations {
+    padding: 8px 0;
+  }
+  .presentation-mode .no-annotations > svg,
+  .presentation-mode .no-annotations small {
+    display: none;
+  }
+  .presentation-mode .modal-wide {
+    width: 1040px;
+  }
+  .presentation-mode .comparison-image {
+    aspect-ratio: auto;
+    height: min(40dvh, 340px);
+  }
+  .presentation-mode .record-metadata dt {
+    font-size: 11px;
+  }
+  .presentation-mode .record-metadata dd,
+  .presentation-mode .detail-success {
+    font-size: 13px;
+  }
+}
+
+@media (max-width: 600px) {
+  .presentation-toggle {
+    padding: 5px;
+    font-size: 10px;
+    gap: 4px;
+  }
+}

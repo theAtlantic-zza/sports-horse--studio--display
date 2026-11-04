@@ -28,6 +28,28 @@ Sites 备用入口：<https://equivision-xray-studio.zza1343538124.chatgpt.site/
 
 快捷键：`V` 选择 / 移动、`R` 矩形框、`P` 多边形、`L` 线段、`Delete` 删除、`⌘Z / Ctrl+Z` 撤销。
 
+## 中期汇报视频
+
+汇报视图：<https://theatlantic-zza.github.io/sports-horse--studio--display/?presentation=1>。
+
+视频入口：<https://theatlantic-zza.github.io/sports-horse--studio--display/demo/equivision-midterm-demo.mp4>。
+
+视频以第一站的标注闭环为主线：总览 → 选择内置示例 → 模拟分析 → 设置病变与置信度、拖动框选 → 确认归档 → 原图/结果对照与下载 → 数据看板。全部操作使用浏览器独立演示数据，不上传真实影像或调用分析模型。成片为 19 秒、1920 × 1080、30 fps、中文字幕、无配音。
+
+右上角“汇报模式”可切换适合桌面录屏的紧凑布局。归档信息与画布、病变属性同屏；退出模式保留当前标注与填写信息。
+
+与参考站 `elfaw775/equivision-preview` 的区别：本站以单张影像编号和标注记录为核心；参考站以马匹、病例、多体位阅片和版本化人工报告草稿为核心。参考站的数据标注、专家复核仍是二期结构预览，AI 未接入。本次只借鉴其视觉层次和步骤提示，没有移植尚未实现的菜单。
+
+当前视频主文件为 `public/demo/equivision-midterm-demo.mp4`，随 GitHub Pages 一同发布。可复用录制脚本在 `scripts/record-midterm.mjs`；原始录屏、字幕素材、抽帧和校验记录放在忽略提交的 `work/midterm-video/`。
+
+需要重录时，先执行 `npm run build`，另一个终端启动 `npx vite preview --host 127.0.0.1 --port 4176 --strictPort`，再执行：
+
+```sh
+npm run record:midterm -- 'http://127.0.0.1:4176/?presentation=1'
+```
+
+录制需要已安装的 Google Chrome、FFmpeg 和 FFprobe。脚本以真实鼠标操作完成标注与下载，并验证新增编号及看板计数，再加速、叠加字幕并输出 MP4；不会访问用户现有浏览器数据。
+
 ## 本地运行
 
 需要 Node.js 22.12 或更新版本。已在 Node.js 25.9.0 和 Google Chrome 下验证。
@@ -66,7 +88,7 @@ npx vite preview --host 127.0.0.1
 - `public/demo/horse-xray-source.png`：用户授权的 X 线示例截图。运行时提取其中影像区域，源文件未修改。
 - `tests/api.test.ts`：14 项 API 测试。
 - `tests/e2e/`：6 项原有标注流程浏览器回归测试。
-- `tests/demo/`：6 项部署版本看板与 CRUD 浏览器测试。
+- `tests/demo/`：7 项部署版本看板、CRUD 与汇报模式浏览器测试。
 - `work/qa/`：测试隔离数据、截图、下载样品与失败诊断。
 - `.openai/hosting.json`：Sites 托管标识与静态部署目录，不包含凭据。
 - `outputs/`：发布时生成的部署包，不纳入源码版本管理。
@@ -99,6 +121,6 @@ npm run test:e2e
 npm run test:demo
 ```
 
-当前验证：严格类型检查和两种构建均通过；14 项 API、6 项原有标注流程、6 项线上演示模式测试全部通过。测试使用本机已安装的 Chrome，无需下载 Chromium。
+当前验证：严格类型检查和两种构建均通过；14 项 API、6 项原有标注流程、7 项线上演示模式测试全部通过。测试使用本机已安装的 Chrome，无需下载 Chromium。
 
 验证覆盖编号留存、无效输入、模拟分析、三种绘制方式、移动 / 撤销 / 缩放、完整归档、修改后保留编号、搜索筛选分页、删除与关联清理、刷新和服务重启留存、PNG 下载格式与尺寸，以及手机和平板布局。测试数据和正式本地数据隔离。

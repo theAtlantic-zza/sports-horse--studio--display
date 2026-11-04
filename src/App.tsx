@@ -18,6 +18,7 @@ import {
   LayoutDashboard,
   LoaderCircle,
   Maximize,
+  MonitorPlay,
   MousePointer2,
   MoveUpRight,
   Pentagon,
@@ -78,6 +79,9 @@ const VIEW_LABELS = {
 };
 
 export default function App() {
+  const [presentation, setPresentation] = useState(
+    new URLSearchParams(window.location.search).get("presentation") === "1",
+  );
   const [view, setView] = useState<View>(
     window.location.hash === "#dashboard" ? "dashboard" : "overview",
   );
@@ -113,6 +117,15 @@ export default function App() {
   const [savedId, setSavedId] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  function togglePresentation() {
+    const next = !presentation;
+    const url = new URL(window.location.href);
+    if (next) url.searchParams.set("presentation", "1");
+    else url.searchParams.delete("presentation");
+    window.history.replaceState(null, "", url);
+    setPresentation(next);
+  }
 
   const refreshRecords = useCallback(async () => {
     try {
@@ -340,8 +353,64 @@ export default function App() {
   );
   const activeIndex = annotations.findIndex((item) => item.id === selectedId);
 
+  const archiveFields = (
+    <div className="study-info panel">
+      <div className="study-info-title">
+        <UserRound size={19} />
+        <span>
+          <strong>归档信息</strong>
+          <small>随标注记录一同保存</small>
+        </span>
+      </div>
+      <label>
+        马匹名称
+        <input
+          aria-label="马匹名称"
+          maxLength={40}
+          value={horseName}
+          onChange={(event) => {
+            setHorseName(event.target.value);
+            setSavedId(null);
+          }}
+        />
+      </label>
+      <label>
+        检查部位
+        <input
+          aria-label="检查部位"
+          maxLength={40}
+          value={bodyPart}
+          onChange={(event) => {
+            setBodyPart(event.target.value);
+            setSavedId(null);
+          }}
+        />
+      </label>
+      <label>
+        标注人 <em>*</em>
+        <input
+          aria-label="标注人"
+          maxLength={40}
+          value={annotator}
+          onChange={(event) => {
+            setAnnotator(event.target.value);
+            setSavedId(null);
+          }}
+        />
+      </label>
+      <div className="archive-time">
+        <Clock3 size={15} />
+        <span>
+          保存时自动记录
+          <br />
+          <strong>北京时间</strong>
+        </span>
+      </div>
+    </div>
+  );
+
   return (
-    <div className="app-shell">
+    <div className={`app-shell${presentation ? " presentation-mode" : ""}`}>
       <aside className="sidebar">
         <button
           className="brand"
@@ -439,8 +508,17 @@ export default function App() {
           <div className="topbar-actions">
             <span className="environment-label">
               <i />
-              DEMO ENVIRONMENT
+              {presentation ? "演示数据 · 模拟分析" : "DEMO ENVIRONMENT"}
             </span>
+            <button
+              className="presentation-toggle"
+              aria-label="切换汇报模式"
+              aria-pressed={presentation}
+              onClick={togglePresentation}
+            >
+              <MonitorPlay size={16} />
+              {presentation ? "退出汇报" : "汇报模式"}
+            </button>
             <button
               className="icon-button"
               aria-label="演示使用指南"
@@ -753,6 +831,7 @@ export default function App() {
                     确认归档
                   </span>
                 </div>
+                {presentation && archiveFields}
                 <div className="studio-layout">
                   <section className="viewer-panel">
                     <div className="viewer-header">
@@ -1054,59 +1133,7 @@ export default function App() {
                     </div>
                   </aside>
                 </div>
-                <div className="study-info panel">
-                  <div className="study-info-title">
-                    <UserRound size={19} />
-                    <span>
-                      <strong>归档信息</strong>
-                      <small>随标注记录一同保存</small>
-                    </span>
-                  </div>
-                  <label>
-                    马匹名称
-                    <input
-                      aria-label="马匹名称"
-                      maxLength={40}
-                      value={horseName}
-                      onChange={(event) => {
-                        setHorseName(event.target.value);
-                        setSavedId(null);
-                      }}
-                    />
-                  </label>
-                  <label>
-                    检查部位
-                    <input
-                      aria-label="检查部位"
-                      maxLength={40}
-                      value={bodyPart}
-                      onChange={(event) => {
-                        setBodyPart(event.target.value);
-                        setSavedId(null);
-                      }}
-                    />
-                  </label>
-                  <label>
-                    标注人 <em>*</em>
-                    <input
-                      aria-label="标注人"
-                      maxLength={40}
-                      value={annotator}
-                      onChange={(event) => {
-                        setAnnotator(event.target.value);
-                        setSavedId(null);
-                      }}
-                    />
-                  </label>
-                  <div className="archive-time">
-                    <Clock3 size={15} />
-                    <span>
-                      保存时自动记录
-                      <br />
-                      <strong>北京时间</strong>
-                    </span>
-                  </div>
-                </div>
+                {!presentation && archiveFields}
                 {savedId && (
                   <div className="saved-inline">
                     <span>
