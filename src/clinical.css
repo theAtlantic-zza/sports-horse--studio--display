@@ -451,6 +451,39 @@
   font-size: 12px;
   height: 38px;
 }
+@supports (appearance: base-select) {
+  .clinical-exam-panel select,
+  .clinical-exam-panel select::picker(select) {
+    appearance: base-select;
+  }
+  .clinical-exam-panel > label > select {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .clinical-exam-panel select::picker-icon {
+    margin-left: auto;
+    color: #6e8566;
+  }
+  .clinical-exam-panel select::picker(select) {
+    background: #fff;
+    color: #254538;
+    border: 1px solid #cad5bf;
+    border-radius: 8px;
+    box-shadow: 0 12px 30px #173f3522;
+  }
+  .clinical-exam-panel select option {
+    font: inherit;
+    padding: 10px 14px;
+  }
+  .clinical-exam-panel select option:checked {
+    background: #edf2e6;
+  }
+  .clinical-exam-panel select option:hover,
+  .clinical-exam-panel select option:focus-visible {
+    background: #dfe8d4;
+  }
+}
 .clinical-manual-entry {
   display: flex;
   align-items: center;

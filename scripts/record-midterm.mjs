@@ -120,29 +120,36 @@ try {
   await page.mouse.move(mouse.x, mouse.y);
   await pause(300);
 
-  await scene("01-login", "登录演示工作台，开始一次辅助诊疗", 2.0, async () => {
+  await scene("01-login", "登录演示工作台，开始一次辅助诊疗", 1.5, async () => {
     await pause(1100);
     await click(page.getByRole("button", { name: "登录工作台", exact: true }));
     await expect(page.getByRole("button", { name: "载入已标注示例", exact: true })).toBeVisible();
     await pause(250);
   });
 
-  await scene("02-input", "载入已标注影像，选择检查部位与病变类型", 3.5, async () => {
+  await scene("02-input", "载入已标注影像，选择检查部位与病变类型", 5.0, async () => {
     await click(page.getByRole("button", { name: "载入已标注示例", exact: true }));
     const bodyPart = page.getByLabel("检查部位", { exact: true });
-    await expect(bodyPart).toBeVisible();
+    await expect(bodyPart).toBeEnabled();
+    await expect(bodyPart.locator("option")).toHaveCount(6);
     await click(bodyPart);
-    await page.keyboard.press("Escape");
-    await bodyPart.selectOption("左前肢 · 腕关节");
-    await pause(350);
+    await expect(page.getByRole("option", { name: "右后肢 · 跗关节", exact: true })).toBeVisible();
+    await page.screenshot({ path: path.join(work, "qa/body-part-options.png") });
+    await pause(1850);
+    await click(page.getByRole("option", { name: "左前肢 · 腕关节", exact: true }), 250);
+    await expect(bodyPart).toHaveValue("左前肢 · 腕关节");
     const lesion = page.getByLabel("关注病变类型", { exact: true });
+    await expect(lesion.locator("option")).toHaveCount(5);
     await click(lesion);
-    await page.keyboard.press("Escape");
-    await lesion.selectOption("关节间隙异常");
-    await pause(650);
+    await expect(page.getByRole("option", { name: "其他病变", exact: true })).toBeVisible();
+    await page.screenshot({ path: path.join(work, "qa/lesion-options.png") });
+    await pause(1850);
+    await click(page.getByRole("option", { name: "关节间隙异常", exact: true }), 250);
+    await expect(lesion).toHaveValue("关节间隙异常");
+    await pause(250);
   });
 
-  await scene("03-thinking", "AI 辅助分析：读取影像、评估病变、生成报告", 3.0, async () => {
+  await scene("03-thinking", "AI 辅助分析：读取影像、评估病变、生成报告", 2.5, async () => {
     const analysisStarted = Date.now();
     await click(page.getByRole("button", { name: "开始 AI 辅助分析", exact: true }));
     await expect(page.getByTestId("diagnosis-thinking")).toBeVisible();
@@ -150,7 +157,7 @@ try {
     expect(Date.now() - analysisStarted).toBeGreaterThan(4300);
   });
 
-  await scene("04-report", "病变倾向以百分比呈现，AI 仅提供参考", 4.0, async () => {
+  await scene("04-report", "病变倾向以百分比呈现，AI 仅提供参考", 3.5, async () => {
     await expect(page.locator(".diagnostic-primary > strong")).toContainText("82%");
     await expect(page.locator(".diagnostic-disclaimer").getByText("AI 仅提供参考，最终结论由人工复核确认。", { exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "人工复核", exact: true })).toBeVisible();
