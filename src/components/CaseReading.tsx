@@ -88,10 +88,19 @@ export default function CaseReading({ id, showReport, user, refresh }: {
     <header className="reading-head"><div>
       <a href={showReport ? viewerURL : "#dashboard"}><ArrowLeft size={15}/>{showReport ? "返回阅片" : "历史记录"}</a>
       <div><h1>{record?.horseName || "病例阅片"}</h1><span>{showReport ? "复核报告" : "影像工作台"}</span><code>{id}</code></div>
-    </div>{record && !showReport && <a className="button primary" href={reportURL}><FileText size={17}/>{hasReport ? "查看复核报告" : "分析与复核"}</a>}</header>
+    </div></header>
     {error && <p role="alert" className="clinical-error">{error}</p>}
     {(!record || !data) && !error && <p role="status">正在读取病例影像…</p>}
-    {record && data && !showReport && <><div ref={host}/><input aria-label="上传对照影像" type="file" accept="image/png,image/jpeg,image/webp" ref={picker} hidden onChange={e=>{const f=e.target.files?.[0];if(f)void attach(f);}}/>
+    {record && data && !showReport && <>
+      <section className="reading-result" aria-label="主图分析状态">
+        <ScanLine size={23} aria-hidden="true"/>
+        <div><strong>{record.diagnosis ? "模拟分析已完成" : "主图已载入，等待模拟分析"}</strong>
+          <p>{record.diagnosis
+            ? `主要关注项 · ${record.diagnosis.scores[0].lesion} ${record.diagnosis.scores[0].percentage}%（固定演示分数）`
+            : "选择关注的病变类型后即可生成示例报告。"}</p></div>
+        <a className="button primary" href={reportURL}><FileText size={17}/>{hasReport ? "查看复核报告" : "分析与复核"}</a>
+      </section>
+      <div ref={host}/><input aria-label="上传对照影像" type="file" accept="image/png,image/jpeg,image/webp" ref={picker} hidden onChange={e=>{const f=e.target.files?.[0];if(f)void attach(f);}}/>
       {record.original.source==="demo" && record.annotations.length>0 && record.diagnosis?.status!=="reviewed" &&
         !data.images.some(im=>im.derivedFrom==="primary") && <div className="sample-compare">
           <button type="button" className="text-button" disabled={busy} onClick={()=>void addAnnotatedCopy()}>载入标注对照片</button>

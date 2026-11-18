@@ -9,3 +9,6 @@
 .sample-compare{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:14px 0;color:#637263;font-size:12px}
 .reading-evidence{padding:12px 16px;margin-bottom:14px;border:1px solid #dee5da;border-radius:9px;background:white;font-size:13px;color:#486451}
 .reading-evidence summary{cursor:pointer;font-weight:650}.reading-evidence>div{display:flex;gap:11px;justify-content:space-between;flex-wrap:wrap;margin-top:10px}.diagnostic-image-panel .report-view-link{font-size:12px;font-weight:650;color:#d3eac8}
+.reading-result{display:flex;align-items:center;gap:12px;margin-bottom:14px;padding:14px 18px;background:#eef4e9;border:1px solid #d5e2cf;border-radius:10px;color:#294b38}
+.reading-result>div{flex:1}.reading-result p{margin:3px 0 0;font-size:13px;color:#526c57}
+@media(max-width:600px){.reading-result{flex-wrap:wrap}.reading-result .button{width:100%}}

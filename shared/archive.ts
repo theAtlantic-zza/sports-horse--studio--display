@@ -155,6 +155,7 @@ function diagnosis(value: DiagnosisReport, bodyPart: string) {
     value.reviewedAt !== null ||
     value.archivedAt != null ||
     value.reviewConclusion !== null ||
+    value.emptyReviewConfirmed === true ||
     !Array.isArray(value.scores) ||
     value.scores.length < 1 ||
     value.scores.length > LESIONS.length ||
@@ -416,15 +417,20 @@ export class Archive {
       throw new ArchiveError(
         "此记录没有可复核的诊疗报告，请重新进行辅助分析。",
       );
-    if (!value || !text(value.reviewer) || !text(value.conclusion, 1000))
-      throw new ArchiveError("请填写复核人和人工复核结论。");
-    if (value.findings !== undefined && !text(value.findings, 2000))
-      throw new ArchiveError("请填写影像所见后确认报告。");
+    if (!value || !text(value.reviewer))
+      throw new ArchiveError("请选择复核人。");
     if (record.diagnosis.status === "reviewed")
       throw new ArchiveError("此报告已完成复核，无需重复提交。");
     const draft = readViewer(record).reviewDraft;
+    const findings = value.findings === undefined ? draft.findings : value.findings;
+    const conclusion = value.conclusion === undefined ? draft.conclusion : value.conclusion;
+    if (typeof findings !== "string" || typeof conclusion !== "string")
+      throw new ArchiveError("复核内容格式无效。");
+    const empty = !findings.trim() && !conclusion.trim();
+    if (empty && value.confirmEmpty !== true)
+      throw new ArchiveError("未填写复核内容，请再次确认后提交。");
     saveDraft(record, {
-      op: "draft", findings: value.findings ?? draft.findings, conclusion: value.conclusion,
+      op: "draft", findings, conclusion,
       revision: value.revision ?? 0, author: value.reviewer,
     });
     const time = now();
@@ -433,7 +439,8 @@ export class Archive {
       status: "reviewed",
       reviewer: value.reviewer.trim(),
       reviewedAt: time,
-      reviewConclusion: value.conclusion.trim(),
+      reviewConclusion: conclusion.trim(),
+      emptyReviewConfirmed: empty,
     };
     record.updatedAt = time;
     const study = this.study(record.studyId);

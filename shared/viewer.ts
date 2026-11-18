@@ -28,7 +28,6 @@ export function saveDraft(record: AnnotationRecord, action: Extract<ViewerAction
       typeof action.conclusion !== "string" || action.conclusion.length > 1000 || !text(action.author))
     throw new ArchiveError("请核对撰写人及报告内容。");
   const findings = action.findings.trim(), conclusion = action.conclusion.trim();
-  if (!findings && !conclusion) throw new ArchiveError("请填写影像所见或人工结论。");
   if (findings !== draft.findings || conclusion !== draft.conclusion) {
     record.updatedAt = new Date().toISOString();
     stored.reviewDraft = {findings, conclusion, author: action.author.trim(), revision: draft.revision + 1,

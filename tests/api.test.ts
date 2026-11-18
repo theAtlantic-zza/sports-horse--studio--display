@@ -797,7 +797,7 @@ describe("mock diagnostic reports and human review", () => {
     assert.equal((await change(draft)).status, 200);
     assert.equal((await change({...draft, author:"朱诗嘉", findings:"冲突的新内容"})).status, 409);
     const {findings, conclusion} = draft;
-    assert.equal((await fetch(url + "/review", json({reviewer: "朱诗嘉", findings: " ", conclusion, revision: 1}))).status, 400);
+    assert.equal((await fetch(url + "/review", json({reviewer: "朱诗嘉", findings: 42, conclusion, revision: 1}))).status, 400);
     assert.equal((await fetch(url + "/review", json({reviewer: "朱诗嘉", findings, conclusion, revision: 0}))).status, 409);
     const signed = await (await fetch(url + "/review", json({reviewer: "朱诗嘉", findings, conclusion, revision: 1}))).json();
     assert.equal(signed.diagnosis.reviewer, "朱诗嘉");
@@ -812,6 +812,28 @@ describe("mock diagnostic reports and human review", () => {
     await launch();
     const restored = await (await fetch(`${diagnosticBase}/api/records/${visit.id}/viewer`)).json();
     assert.deepEqual(restored, saved);
+  });
+
+  it("requires explicit acknowledgement only when both review fields are empty", async () => {
+    for (const mode of ["empty", "findings", "conclusion"]) {
+      const study = await (await fetch(diagnosticBase + "/api/studies", json(image))).json();
+      const visit = await (await fetch(diagnosticBase + "/api/records", json(diagnosticPayload({studyId:study.id})))).json();
+      const url = diagnosticBase + "/api/records/" + visit.id;
+      const data = {reviewer:"李其杭", findings:mode === "findings" ? "  已查看投照位  " : " \n ", conclusion:mode === "conclusion" ? "  建议复查  " : "　"};
+      if (mode === "empty") {
+        for (const bad of [undefined, "true", false]) {
+          assert.equal((await fetch(url + "/review", json({...data, confirmEmpty:bad}))).status, 400);
+        }
+        assert.equal((await (await fetch(url)).json()).diagnosis.status, "pending");
+      }
+      const response = await fetch(url + "/review", json({...data, confirmEmpty:mode === "empty"}));
+      assert.equal(response.status, 200);
+      const saved = await (await fetch(url)).json();
+      assert.equal(saved.diagnosis.emptyReviewConfirmed, mode === "empty");
+      assert.equal(saved.diagnosis.archivedAt, null);
+      assert.equal(saved.diagnosis.reviewConclusion, data.conclusion.trim());
+      assert.equal(saved.viewerData.reviewDraft.findings, data.findings.trim());
+    }
   });
 
   it("stores an annotated copy once and keeps its projection bound to the primary film", async () => {

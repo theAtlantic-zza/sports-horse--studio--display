@@ -5,6 +5,33 @@ const caseId = "EV-000001";
 const viewer = "/#viewer/" + caseId;
 const screenshots = "work/qa/screenshots";
 
+for (const mode of ["empty", "findings"] as const) {
+  test(`review signs ${mode} content with the appropriate confirmation`, async ({page}) => {
+    await page.goto(viewer);
+    const status = page.getByRole("region", {name:"主图分析状态"});
+    await expect(status).toContainText("等待模拟分析");
+    await status.getByRole("link", {name:"分析与复核"}).click();
+    await page.getByRole("button", {name:"开始模拟分析"}).click();
+    await page.getByRole("button", {name:"人工复核", exact:true}).click({timeout:12000});
+    const editor = page.getByRole("dialog", {name:"人工复核"});
+    const question = page.getByRole("dialog", {name:"确认留空提交？"});
+    await editor.getByLabel("影像所见", {exact:true}).fill(mode === "findings" ? "已核对主片" : "  ");
+    await editor.getByRole("button", {name:"确认复核", exact:true}).click();
+    if (mode === "empty") {
+      await question.getByRole("button", {name:"返回填写"}).click();
+      await expect(editor.getByLabel("影像所见", {exact:true})).toHaveValue("  ");
+      await editor.getByRole("button", {name:"确认复核", exact:true}).click();
+      await question.getByRole("button", {name:"确认留空并提交"}).click();
+    }
+    const report = page.getByTestId("diagnosis-report");
+    await expect(report).toContainText("已复核待归档");
+    await page.reload();
+    await expect(report).toContainText(mode === "empty" ? "复核人已确认留空" : "已核对主片");
+    await page.getByRole("link", {name:"返回阅片"}).click();
+    await expect(status).toContainText("模拟分析已完成");
+  });
+}
+
 async function measure(page: Page, pane: Locator, tool: "distance" | "angle", points: number[][]) {
   await page.locator(`[data-tool="${tool}"]`).click();
   await pane.scrollIntoViewIfNeeded();

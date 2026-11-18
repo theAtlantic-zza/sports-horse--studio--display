@@ -31,6 +31,7 @@ export default function DiagnosticReport({
 }: Props) {
   const [current, setCurrent] = useState(record);
   const [reviewOpen, setReviewOpen] = useState(false);
+  const [confirmEmpty, setConfirmEmpty] = useState(false);
   const [reviewer, setReviewer] = useState(record.annotator);
   const [findings, setFindings] = useState(record.viewerData?.reviewDraft.findings || "");
   const [conclusion, setConclusion] = useState(record.viewerData?.reviewDraft.conclusion || "");
@@ -53,12 +54,17 @@ export default function DiagnosticReport({
   const primary = diagnosis.scores[0];
 
   function showReview(open: boolean) {
+    setConfirmEmpty(false);
     setReviewOpen(open);
     onReviewOpen?.(open);
   }
 
-  async function save(action: "draft" | "review" | "archive") {
+  async function save(action: "draft" | "review" | "archive", acknowledged = false) {
     setError("");
+    if (action === "review" && !findings.trim() && !conclusion.trim() && !acknowledged) {
+      setConfirmEmpty(true);
+      return;
+    }
     setBusy(true);
     try {
       if (action === "draft") {
@@ -69,7 +75,7 @@ export default function DiagnosticReport({
       }
       const next = action === "archive"
         ? await api.archiveReport(current.id)
-        : await api.reviewRecord(current.id, { reviewer, findings, conclusion, revision:draftRevision });
+        : await api.reviewRecord(current.id, { reviewer, findings, conclusion, revision:draftRevision, confirmEmpty:acknowledged });
       setCurrent(next);
       showReview(false);
       onChange?.(next);
@@ -194,7 +200,8 @@ export default function DiagnosticReport({
           <div>
             <strong>人工复核已完成 · {diagnosis.reviewer}</strong>
             {current.viewerData?.reviewDraft.findings && <p>影像所见 · {current.viewerData.reviewDraft.findings}</p>}
-            <p>复核结论 · {diagnosis.reviewConclusion}</p>
+            {diagnosis.reviewConclusion && <p>复核结论 · {diagnosis.reviewConclusion}</p>}
+            {diagnosis.emptyReviewConfirmed && <p>复核人已确认留空，未填写书面意见。</p>}
           </div>
           <span>
             {diagnosis.reviewedAt && formatTime(diagnosis.reviewedAt)}
@@ -235,7 +242,7 @@ export default function DiagnosticReport({
           </span>
         )}
       </div>
-      {reviewOpen && (
+      {reviewOpen && !confirmEmpty && (
         <Modal
           title="人工复核"
           onClose={() => {
@@ -272,17 +279,16 @@ export default function DiagnosticReport({
                 ))}
               </select>
             </label>
-            <label>影像所见
+            <label>影像所见（选填）
               <textarea aria-label="影像所见" value={findings} onChange={event=>setFindings(event.target.value)}
-                placeholder="描述核对过的投照位、异常区域及测量" maxLength={2000} rows={2} required disabled={busy}/>
+                placeholder="描述核对过的投照位、异常区域及测量" maxLength={2000} rows={2} disabled={busy}/>
             </label>
             <label>
-              复核意见
+              复核意见（选填）
               <textarea
                 aria-label="复核意见"
                 value={conclusion}
                 onChange={(event) => setConclusion(event.target.value)}
-                required
                 placeholder="填写你核对影像后的意见"
                 maxLength={1000}
                 rows={3}
@@ -300,7 +306,7 @@ export default function DiagnosticReport({
             )}
             {draftSaved && <small role="status">草稿已保存 · {formatTime(draftSaved)}</small>}
             <div className="modal-footer">
-              <button type="button" className="button light" onClick={()=>void save("draft")} disabled={busy || (!conclusion.trim() && !findings.trim())}>保存草稿</button>
+              <button type="button" className="button light" onClick={()=>void save("draft")} disabled={busy || (!draftRevision && !conclusion.trim() && !findings.trim())}>保存草稿</button>
               <button
                 type="button"
                 className="button light"
@@ -312,7 +318,7 @@ export default function DiagnosticReport({
               <button
                 type="submit"
                 className="button primary"
-                disabled={busy || !conclusion.trim() || !findings.trim()}
+                disabled={busy}
               >
                 {busy ? (
                   <LoaderCircle size={16} className="spin" />
@@ -323,6 +329,18 @@ export default function DiagnosticReport({
               </button>
             </div>
           </form>
+        </Modal>
+      )}
+      {reviewOpen && confirmEmpty && (
+        <Modal title="确认留空提交？" onClose={() => { if (!busy) setConfirmEmpty(false); }}>
+          <div className="clinical-review-form">
+            <p>影像所见和复核意见均为空。继续后，系统将以{reviewer}的姓名确认本次复核，并记录提交时间。</p>
+            {error && <p className="modal-error" role="alert">{error}</p>}
+            <div className="modal-footer">
+              <button className="button light" disabled={busy} onClick={() => setConfirmEmpty(false)}>返回填写</button>
+              <button className="button primary" disabled={busy} onClick={() => void save("review", true)}>确认留空并提交</button>
+            </div>
+          </div>
         </Modal>
       )}
     </section>

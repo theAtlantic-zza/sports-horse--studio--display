@@ -35,11 +35,13 @@ export interface DiagnosisReport extends DiagnosisInput {
   reviewedAt: string | null;
   archivedAt: string | null;
   reviewConclusion: string | null;
+  emptyReviewConfirmed?: boolean;
 }
 export interface DiagnosisReview {
   reviewer: string;
-  conclusion: string;
+  conclusion?: string;
   findings?: string;
+  confirmEmpty?: boolean;
   revision?: number;
 }
 export type ShapeType = "rectangle" | "polygon" | "line";
