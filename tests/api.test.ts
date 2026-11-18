@@ -1,7 +1,7 @@
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import type { Server } from "node:http";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createApp } from "../server/app.ts";
 
@@ -403,6 +403,7 @@ describe("mock diagnostic reports and human review", () => {
     assert.equal(pendingReport.targetLesion, "关节间隙异常");
     assert.equal(pendingReport.status, "pending");
     assert.equal(pendingReport.reviewedAt, null);
+    assert.equal(pendingReport.archivedAt, null);
     assert.deepEqual(
       (pendingReport.scores as { percentage: number }[]).map(
         (score) => score.percentage,
@@ -461,6 +462,10 @@ describe("mock diagnostic reports and human review", () => {
     assert.equal(record.annotatedImage, png);
     const listing = await (await fetch(`${diagnosticBase}/api/records`)).json();
     assert.equal(listing[0].diagnosis.status, "pending");
+    assert.equal(
+      (await fetch(`${diagnosticBase}/api/records/${diagnosisRecordId}/archive`, { method: "POST" })).status,
+      409,
+    );
     assert.equal(listing[0].original, undefined);
   });
 
@@ -473,6 +478,7 @@ describe("mock diagnostic reports and human review", () => {
       { ...pendingReport, status: "reviewed" },
       { ...pendingReport, reviewer: "伪造复核人" },
       { ...pendingReport, reviewedAt: new Date().toISOString() },
+      { ...pendingReport, archivedAt: new Date().toISOString() },
       { ...pendingReport, scores: [] },
       {
         ...pendingReport,
@@ -545,6 +551,7 @@ describe("mock diagnostic reports and human review", () => {
     assert.equal(record.id, diagnosisRecordId);
     assert.equal(record.createdAt, createdAt);
     assert.equal(record.diagnosis.status, "reviewed");
+    assert.equal(record.diagnosis.archivedAt, null);
     assert.equal(record.diagnosis.reviewer, "朱诗嘉");
     assert.ok(
       Math.abs(Date.now() - Date.parse(record.diagnosis.reviewedAt)) < 5000,
@@ -558,6 +565,7 @@ describe("mock diagnostic reports and human review", () => {
       await fetch(`${diagnosticBase}/api/records/${diagnosisRecordId}`)
     ).json();
     assert.equal(restored.diagnosis.reviewedAt, reviewedAt);
+    assert.equal(restored.diagnosis.archivedAt, null);
     assert.equal(
       restored.diagnosis.reviewConclusion,
       "已核对部位与标注，保留模拟分析结论。",
@@ -571,6 +579,47 @@ describe("mock diagnostic reports and human review", () => {
       ).status,
       400,
     );
+  });
+
+  it("archives the reviewed record once, even when two archive requests arrive together", async () => {
+    const endpoint = `${diagnosticBase}/api/records/${diagnosisRecordId}`;
+    const requests = await Promise.all([
+      fetch(`${endpoint}/archive`, { method: "POST" }),
+      fetch(`${endpoint}/archive`, { method: "POST" }),
+    ]);
+    for (const request of requests) assert.equal(request.status, 200);
+    const [first, retry] = await Promise.all(requests.map((item) => item.json()));
+    const stored = await (await fetch(endpoint)).json();
+    assert.ok(Date.parse(first.diagnosis.archivedAt) >= Date.parse(first.diagnosis.reviewedAt));
+    assert.deepEqual(first.diagnosis, retry.diagnosis);
+    assert.deepEqual(first.diagnosis, stored.diagnosis);
+    assert.equal(stored.id, diagnosisRecordId);
+    assert.equal(stored.createdAt, createdAt);
+    assert.equal(stored.diagnosis.reviewer, "朱诗嘉");
+  });
+
+  it("preserves historical combined confirmations while leaving legacy pending reports open", async () => {
+    const directory = await mkdtemp(path.resolve("work/qa/diagnosis/legacy-"));
+    const file = path.join(directory, "image-archive.json");
+    try {
+      const state = JSON.parse(await readFile(path.join(diagnosticDirectory, "image-archive.json"), "utf8"));
+      const reviewed = state.records[0];
+      delete reviewed.diagnosis.archivedAt;
+      const pending = { ...reviewed, id: "EV-000002", diagnosis: { ...pendingReport } };
+      delete pending.diagnosis.archivedAt;
+      state.records.unshift(pending);
+      state.nextRecordNumber = 3;
+      await writeFile(file, JSON.stringify(state));
+      await createApp(directory, 0, 0);
+      const migrated = JSON.parse(await readFile(file, "utf8"));
+      assert.equal(migrated.records[0].diagnosis.archivedAt, null);
+      assert.equal(migrated.studies[0].status, "pending");
+      assert.equal(migrated.records[1].diagnosis.archivedAt, reviewed.diagnosis.reviewedAt);
+      await createApp(directory, 0, 0);
+      assert.deepEqual(JSON.parse(await readFile(file, "utf8")), migrated);
+    } finally {
+      await rm(directory, { recursive: true });
+    }
   });
 
   it("keeps report snapshots for name edits but removes stale reports when the body part changes", async () => {
@@ -588,7 +637,12 @@ describe("mock diagnostic reports and human review", () => {
     const changed = await response.json();
     assert.equal(changed.id, diagnosisRecordId);
     assert.equal(changed.diagnosis, undefined);
+    assert.equal(changed.requiresAnalysis, true);
     assert.equal(changed.original.dataUrl, png);
+    assert.equal(
+      (await fetch(`${diagnosticBase}/api/records/${diagnosisRecordId}/archive`, { method: "POST" })).status,
+      409,
+    );
     assert.equal(
       (
         await fetch(

@@ -17,11 +17,13 @@ test("clinical UI persists its report and human review through the Express mock 
   });
   await page.getByRole("button", { name: "人工复核", exact: true }).click();
   await page.getByLabel("复核人", { exact: true }).selectOption("李其杭");
+  await page.getByLabel("复核意见", { exact: true }).fill("已核对影像与分析结果。");
   await page
-    .getByRole("button", { name: "确认复核并归档", exact: true })
+    .getByRole("button", { name: "确认复核", exact: true })
     .click();
+  await page.getByRole("button", { name: "归档报告", exact: true }).click();
   await page.getByRole("button", { name: "查看数据看板", exact: true }).click();
-  await expect(page.locator(".dashboard-table")).toContainText("已复核");
+  await expect(page.locator(".dashboard-table")).toContainText("已归档");
   const records: RecordSummary[] = await (
     await page.request.get("/api/records")
   ).json();
@@ -38,5 +40,6 @@ test("clinical UI persists its report and human review through the Express mock 
     reviewer: "李其杭",
   });
   expect(saved.diagnosis?.scores[0].percentage).toBe(82);
+  expect(saved.diagnosis?.archivedAt).toBeTruthy();
   expect(saved.original.dataUrl).toMatch(/^data:image\/png;base64,/);
 });

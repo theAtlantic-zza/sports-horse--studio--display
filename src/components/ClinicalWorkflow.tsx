@@ -53,6 +53,8 @@ const stages = [
   "生成报告草稿",
 ];
 const userKey = "equivision-demo-user";
+export const activeReportKey = "equivision-current-report";
+const workflowLabels = ["上传影像", "模拟分析", "查看结果", "人工复核", "归档报告"];
 
 export default function ClinicalWorkflow({
   onArchived,
@@ -76,9 +78,27 @@ export default function ClinicalWorkflow({
   const [busy, setBusy] = useState<"loading" | "analyzing" | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [record, setRecord] = useState<AnnotationRecord | null>(null);
+  const [reviewing, setReviewing] = useState(false);
+  const [restoring, setRestoring] = useState(() => !!sessionStorage.getItem(activeReportKey));
   const [error, setError] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    const id = sessionStorage.getItem(activeReportKey);
+    if (!id) return;
+    let active = true;
+    void api.record(id).then((saved) => {
+      if (!active) return;
+      if (saved.diagnosis) setRecord(saved);
+      else sessionStorage.removeItem(activeReportKey);
+    }).catch((error: Error) => {
+      if (active) {
+        sessionStorage.removeItem(activeReportKey);
+        setError(error.message);
+      }
+    }).finally(() => { if (active) setRestoring(false); });
+    return () => { active = false; };
+  }, []);
   useEffect(() => {
     if (user) onUserChange?.(user);
   }, [user, onUserChange]);
@@ -178,6 +198,7 @@ export default function ClinicalWorkflow({
         diagnosis,
       });
       setRecord(next);
+      sessionStorage.setItem(activeReportKey, next.id);
       await onRecordsChanged();
     } catch (error) {
       setError((error as Error).message);
@@ -190,13 +211,9 @@ export default function ClinicalWorkflow({
     96,
     Math.round((elapsed / DIAGNOSIS_DELAY_MS) * 100),
   );
-  const workflowStep = record
-    ? record.diagnosis?.status === "reviewed"
-      ? 3
-      : 2
-    : busy === "analyzing"
-      ? 1
-      : 0;
+  const workflowStep = record?.diagnosis?.archivedAt ? 5
+    : record?.diagnosis?.status === "reviewed" ? 4
+    : reviewing ? 3 : record ? 2 : busy === "analyzing" ? 1 : 0;
 
   if (!user)
     return (
@@ -291,9 +308,9 @@ export default function ClinicalWorkflow({
         <div>
           <span className="clinical-kicker">ASSISTED DIAGNOSTICS</span>
           <h1>
-            AI 辅助诊疗<span>.</span>
+            {record ? "影像检查报告" : "新建影像检查"}<span>.</span>
           </h1>
-          <p>影像提供线索，专业判断由人完成。</p>
+          <p>{record ? `${record.horseName} · ${record.bodyPart} · ${record.id}` : "上传 X 线片并选择检查部位，开始模拟分析。"}</p>
         </div>
         <div className="clinical-signed-user">
           <span>
@@ -306,7 +323,7 @@ export default function ClinicalWorkflow({
         </div>
       </header>
       <div className="clinical-steps" aria-label="辅助诊疗流程">
-        {["影像与检查信息", "AI 辅助分析", "生成诊疗报告", "人工复核归档"].map(
+        {workflowLabels.map(
           (label, i) => (
             <div
               className={
@@ -322,7 +339,7 @@ export default function ClinicalWorkflow({
                 {i < workflowStep ? <Check size={13} /> : `0${i + 1}`}
               </span>
               <strong>{label}</strong>
-              {i < 3 && <ChevronRight size={16} />}
+              {i < workflowLabels.length - 1 && <ChevronRight size={16} />}
             </div>
           ),
         )}
@@ -332,14 +349,18 @@ export default function ClinicalWorkflow({
           {error}
         </div>
       )}
-      {record ? (
+      {restoring ? <p role="status">正在读取诊疗报告…</p> : record ? (
         <DiagnosticReport
           record={record}
-          onReviewed={(next) => {
+          onReviewOpen={setReviewing}
+          onChange={(next) => {
             setRecord(next);
             void onRecordsChanged();
           }}
-          onDashboard={() => onArchived(record.id)}
+          onDashboard={() => {
+            sessionStorage.removeItem(activeReportKey);
+            onArchived(record.id);
+          }}
         />
       ) : busy === "analyzing" ? (
         <section

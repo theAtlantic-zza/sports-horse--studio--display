@@ -6,7 +6,7 @@ import {
   Archive,
   ArchiveError,
   emptyArchive,
-  migrateDemoAnnotators,
+  migrateArchive,
 } from "../shared/archive.ts";
 import type { AnnotationRecord, ArchiveState } from "../shared/types.ts";
 import { DIAGNOSIS_DELAY_MS } from "../shared/types.ts";
@@ -60,7 +60,7 @@ export async function createApp(
     }
   }
   const archive = new Archive(state);
-  const renamed = migrateDemoAnnotators(state);
+  const migrated = migrateArchive(state);
   let queue = Promise.resolve();
   function commit<T>(operation: () => T): Promise<T> {
     const task = queue.then(async () => {
@@ -85,7 +85,7 @@ export async function createApp(
     );
     return task;
   }
-  if (renamed) await commit(() => undefined);
+  if (migrated) await commit(() => undefined);
   const app = express();
   app.disable("x-powered-by");
   app.use(express.json({ limit: "24mb" }));
@@ -129,6 +129,9 @@ export async function createApp(
   );
   app.post("/api/records/:id/review", async (req, res) =>
     res.json(await commit(() => archive.reviewRecord(req.params.id, req.body))),
+  );
+  app.post("/api/records/:id/archive", async (req, res) =>
+    res.json(await commit(() => archive.archiveReport(req.params.id))),
   );
   app.delete("/api/records/:id", async (req, res) =>
     res.json(await commit(() => archive.deleteRecord(req.params.id))),

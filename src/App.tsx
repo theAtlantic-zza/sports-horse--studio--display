@@ -47,7 +47,7 @@ import type {
   StudyImage,
   StudySummary,
 } from "../shared/types";
-import { ANNOTATORS, LESIONS } from "../shared/types";
+import { ANNOTATORS, LESIONS, recordStatus } from "../shared/types";
 import { api, BROWSER_DEMO } from "./api";
 import {
   DEMO_SOURCE,
@@ -62,7 +62,7 @@ import Modal from "./components/Modal";
 import DataDashboard from "./components/DataDashboard";
 import DownloadLink from "./components/DownloadLink";
 import { RecordDetail, RecordList } from "./components/Records";
-import ClinicalWorkflow from "./components/ClinicalWorkflow";
+import ClinicalWorkflow, { activeReportKey } from "./components/ClinicalWorkflow";
 import DiagnosticReport from "./components/DiagnosticReport";
 
 type View = "clinical" | "overview" | "workspace" | "records" | "dashboard";
@@ -356,7 +356,7 @@ export default function App() {
       setSavedId(record.id);
       setModal(null);
       setDetail(record);
-      setToast("标注已归档，原图与标注图均已保留。");
+      setToast(record.requiresAnalysis ? "标注已更新，需重新分析。" : "标注已保存，原图与标注图均已保留。");
       await refreshRecords();
     } catch (error) {
       setError((error as Error).message);
@@ -1175,7 +1175,7 @@ export default function App() {
                   <div className="saved-inline">
                     <span>
                       <BadgeCheck size={17} />
-                      当前标注已保存，原图与标注图均已归档。
+                      当前标注已保存，可查看原图与标注图。
                     </span>
                     <button
                       className="text-button"
@@ -1211,6 +1211,11 @@ export default function App() {
             records={records}
             onRefresh={refreshRecords}
             onNew={newStudy}
+            onNewExam={() => {
+              sessionStorage.removeItem(activeReportKey);
+              setFocusedRecordId("");
+              setView("clinical");
+            }}
             onOpen={(id) => void openRecord(id)}
             onResume={(id, recordId) => void resumeStudy(id, recordId)}
           />
@@ -1242,8 +1247,8 @@ export default function App() {
                 </p>
               </div>
               <div className="archive-total">
-                <strong>{String(records.length).padStart(2, "0")}</strong>
-                <span>份已归档影像</span>
+                <strong>{String(records.filter((r) => recordStatus(r) === "annotated").length).padStart(2, "0")}</strong>
+                <span>份已归档记录</span>
               </div>
             </div>
             <RecordList
@@ -1459,7 +1464,7 @@ export default function App() {
               },
               {
                 title: "AI 模拟分析与人工复核",
-                text: "开始分析后等待分阶段的演示过程，查看百分比报告；点击人工复核确认意见，记录复核人和时间，再到数据看板查看完整档案。AI 仅提供参考，所有百分比均为固定演示数据。",
+                text: "查看模拟百分比报告，点击“人工复核”填写意见。“确认复核”记录复核人和时间，随后点击“归档报告”，即可到数据看板查看档案。AI 仅提供参考。",
               },
               {
                 title: "加载与模拟分析",
@@ -1513,7 +1518,7 @@ export default function App() {
           {detail.diagnosis ? (
             <DiagnosticReport
               record={detail}
-              onReviewed={(record) => {
+              onChange={(record) => {
                 setDetail(record);
                 void refreshRecords();
               }}

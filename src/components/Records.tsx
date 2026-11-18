@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import type { AnnotationRecord, RecordSummary } from "../../shared/types";
+import { recordStatus, STATUS_LABELS } from "../../shared/types";
 import { formatTime } from "../api";
 import { SHAPE_LABELS } from "../imaging";
 import DownloadLink from "./DownloadLink";
@@ -92,11 +93,7 @@ export function RecordList({
                         : `${record.annotations.length} 处标注`}{" "}
                       ·{" "}
                       <span className="green-text">
-                        {record.diagnosis
-                          ? record.diagnosis.status === "reviewed"
-                            ? "已复核"
-                            : "待复核"
-                          : "已归档"}
+                        {STATUS_LABELS[recordStatus(record)]}
                       </span>
                     </small>
                   </td>

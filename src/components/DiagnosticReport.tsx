@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   ArrowRight,
+  Archive,
   BadgeCheck,
   CheckCheck,
   ClipboardCheck,
@@ -17,21 +18,21 @@ import Modal from "./Modal";
 
 interface Props {
   record: AnnotationRecord;
-  onReviewed?: (record: AnnotationRecord) => void;
+  onChange?: (record: AnnotationRecord) => void;
+  onReviewOpen?: (open: boolean) => void;
   onDashboard?: () => void;
 }
 
 export default function DiagnosticReport({
   record,
-  onReviewed,
+  onChange,
+  onReviewOpen,
   onDashboard,
 }: Props) {
   const [current, setCurrent] = useState(record);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewer, setReviewer] = useState(record.annotator);
-  const [conclusion, setConclusion] = useState(
-    "已核对影像、检查部位及分析结果，确认本次演示报告并归档。",
-  );
+  const [conclusion, setConclusion] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   useEffect(() => {
@@ -43,14 +44,21 @@ export default function DiagnosticReport({
   const reviewed = diagnosis.status === "reviewed";
   const primary = diagnosis.scores[0];
 
-  async function review() {
+  function showReview(open: boolean) {
+    setReviewOpen(open);
+    onReviewOpen?.(open);
+  }
+
+  async function save(action: "review" | "archive") {
     setError("");
     setBusy(true);
     try {
-      const next = await api.reviewRecord(current.id, { reviewer, conclusion });
+      const next = action === "archive"
+        ? await api.archiveReport(current.id)
+        : await api.reviewRecord(current.id, { reviewer, conclusion });
       setCurrent(next);
-      setReviewOpen(false);
-      onReviewed?.(next);
+      showReview(false);
+      onChange?.(next);
     } catch (error) {
       setError((error as Error).message);
     } finally {
@@ -76,7 +84,7 @@ export default function DiagnosticReport({
           className={`clinical-status ${reviewed ? "reviewed" : "pending"}`}
         >
           {reviewed ? <BadgeCheck size={15} /> : <ClipboardCheck size={15} />}
-          {reviewed ? "已人工复核" : "待人工复核"}
+          {diagnosis.archivedAt ? "已归档" : reviewed ? "已复核待归档" : "待人工复核"}
         </span>
       </div>
       <div className="diagnostic-metadata">
@@ -178,21 +186,27 @@ export default function DiagnosticReport({
           </span>
         </div>
       )}
+      {!reviewOpen && error && <p className="modal-error" role="alert">{error}</p>}
       <div className="diagnostic-actions">
         <span>
           <UserRound size={15} />
-          {reviewed
-            ? "报告与人工意见已一同留存"
-            : "报告草稿已保存，等待人工确认"}
+          {diagnosis.archivedAt
+            ? `归档时间 · ${formatTime(diagnosis.archivedAt)}`
+            : reviewed ? "复核意见已确认，可以归档此报告" : "报告草稿已保存，等待人工确认"}
         </span>
         {!reviewed ? (
           <button
             className="button primary"
-            onClick={() => setReviewOpen(true)}
+            onClick={() => showReview(true)}
           >
             <ClipboardCheck size={18} />
             人工复核
             <ArrowRight size={16} />
+          </button>
+        ) : !diagnosis.archivedAt ? (
+          <button className="button primary" disabled={busy} onClick={() => void save("archive")}>
+            {busy ? <LoaderCircle size={17} className="spin" /> : <Archive size={17} />}
+            归档报告
           </button>
         ) : onDashboard ? (
           <button className="button primary" onClick={onDashboard}>
@@ -210,14 +224,14 @@ export default function DiagnosticReport({
         <Modal
           title="人工复核"
           onClose={() => {
-            if (!busy) setReviewOpen(false);
+            if (!busy) showReview(false);
           }}
         >
           <form
             className="clinical-review-form"
             onSubmit={(event) => {
               event.preventDefault();
-              void review();
+              void save("review");
             }}
           >
             <div className="clinical-review-summary">
@@ -250,6 +264,7 @@ export default function DiagnosticReport({
                 value={conclusion}
                 onChange={(event) => setConclusion(event.target.value)}
                 required
+                placeholder="填写你核对影像后的意见"
                 maxLength={1000}
                 rows={3}
                 disabled={busy}
@@ -268,7 +283,7 @@ export default function DiagnosticReport({
               <button
                 type="button"
                 className="button light"
-                onClick={() => setReviewOpen(false)}
+                onClick={() => showReview(false)}
                 disabled={busy}
               >
                 取消
@@ -283,7 +298,7 @@ export default function DiagnosticReport({
                 ) : (
                   <CheckCheck size={17} />
                 )}
-                确认复核并归档
+                确认复核
               </button>
             </div>
           </form>

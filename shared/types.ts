@@ -33,6 +33,7 @@ export interface DiagnosisReport extends DiagnosisInput {
   status: "pending" | "reviewed";
   reviewer: string | null;
   reviewedAt: string | null;
+  archivedAt: string | null;
   reviewConclusion: string | null;
 }
 export interface DiagnosisReview {
@@ -75,6 +76,7 @@ export interface AnnotationRecord extends Omit<SaveRecordInput, "studyId"> {
   createdAt: string;
   updatedAt: string;
   original: StudyImage;
+  requiresAnalysis?: boolean;
 }
 
 export type RecordSummary = Omit<
@@ -91,12 +93,21 @@ export interface AnalysisResult {
   suggestion: Annotation;
 }
 
-export type StudyStatus = "uploaded" | "analyzed" | "annotated";
 export const STATUS_LABELS = {
   uploaded: "待分析",
   analyzed: "待标注",
+  pending: "待复核",
+  reviewed: "已复核待归档",
+  reanalysis: "需重新分析",
   annotated: "已归档",
 };
+export type StudyStatus = keyof typeof STATUS_LABELS;
+
+export function recordStatus(record: Pick<AnnotationRecord, "diagnosis" | "requiresAnalysis">) {
+  if (record.requiresAnalysis) return "reanalysis";
+  const report = record.diagnosis;
+  return report && !report.archivedAt ? report.status : "annotated";
+}
 export interface Study {
   id: string;
   image: StudyImage;

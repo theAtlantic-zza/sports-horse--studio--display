@@ -63,6 +63,8 @@ const serverApi = {
       method: "POST",
       body: JSON.stringify(value),
     }),
+  archiveReport: (id: string) =>
+    request<AnnotationRecord>(`/api/records/${id}/archive`, { method: "POST" }),
   deleteRecord: (id: string) =>
     request<{ deleted: boolean }>(`/api/records/${id}`, { method: "DELETE" }),
 };
@@ -115,6 +117,8 @@ const browserApi: typeof serverApi = {
       (a) => a.reviewRecord(id, value),
       true,
     ),
+  archiveReport: async (id) =>
+    (await import("./demo-store")).demoOperation((a) => a.archiveReport(id), true),
   deleteRecord: async (id) =>
     (await import("./demo-store")).demoOperation(
       (a) => a.deleteRecord(id),

@@ -172,8 +172,9 @@ try {
     await dialog.getByLabel("复核人", { exact: true }).selectOption("朱诗嘉");
     await dialog.getByLabel("复核意见", { exact: true }).fill("已复核影像、检查部位与分析结果，确认本次演示报告。");
     await pause(1100);
-    await click(dialog.getByRole("button", { name: "确认复核并归档", exact: true }));
+    await click(dialog.getByRole("button", { name: "确认复核", exact: true }));
     await expect(dialog).toHaveCount(0);
+    await click(page.getByRole("button", { name: "归档报告", exact: true }));
     await expect(page.getByRole("button", { name: "查看数据看板", exact: true })).toBeVisible();
     await pause(450);
   });
@@ -185,7 +186,7 @@ try {
     const table = page.locator(".dashboard-table");
     await expect(table).toContainText("EV-000006");
     await expect(table).toContainText("82%");
-    await expect(table).toContainText("已复核");
+    await expect(table).toContainText("已归档");
     await expect(table).toContainText("朱诗嘉");
     await pause(700);
     await table.locator("tbody tr").first().scrollIntoViewIfNeeded();
@@ -201,12 +202,14 @@ try {
   let record = archive.records.find((item) => item.id === "EV-000006");
   expect(record.studyId).toBe("IMG-000009");
   expect(record.diagnosis.status).toBe("reviewed");
+  expect(record.diagnosis.archivedAt).toBeTruthy();
   expect(record.diagnosis.reviewer).toBe("朱诗嘉");
   expect(record.diagnosis.scores[0].percentage).toBe(82);
   await page.reload({ waitUntil: "networkidle" });
   archive = await savedArchive();
   record = archive.records.find((item) => item.id === "EV-000006");
   expect(record.diagnosis.status).toBe("reviewed");
+  expect(record.diagnosis.archivedAt).toBeTruthy();
   await writeFile(path.join(work, "qa/workflow-verification.json"), JSON.stringify({
     studies: archive.studies.length,
     records: archive.records.length,

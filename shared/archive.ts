@@ -1,4 +1,4 @@
-import { ANNOTATORS, BODY_PARTS, LESIONS } from "./types.ts";
+import { ANNOTATORS, BODY_PARTS, LESIONS, recordStatus } from "./types.ts";
 import type {
   Annotation,
   AnnotationRecord,
@@ -32,7 +32,7 @@ export const emptyArchive = (): ArchiveState => ({
   records: [],
 });
 
-export function migrateDemoAnnotators(state: ArchiveState): boolean {
+export function migrateArchive(state: ArchiveState): boolean {
   const previousNames = new Set(["林医生", "陈医生", "演示标注员"]);
   const replacement = (studyId: string) => {
     const index = /^IMG-\d+$/.test(studyId) ? Number(studyId.slice(4)) - 1 : 0;
@@ -46,8 +46,21 @@ export function migrateDemoAnnotators(state: ArchiveState): boolean {
     }
   }
   for (const record of state.records) {
+    const report = record.diagnosis;
+    if (report && report.archivedAt === undefined) {
+      // Previously the single confirmation action both reviewed and archived the report.
+      report.archivedAt = report.status === "reviewed" ? report.reviewedAt : null;
+      changed = true;
+    }
     if (previousNames.has(record.annotator)) {
       record.annotator = replacement(record.studyId);
+      changed = true;
+    }
+  }
+  for (const study of state.studies) {
+    const latest = state.records.find((record) => record.studyId === study.id);
+    if (latest && study.status !== recordStatus(latest)) {
+      study.status = recordStatus(latest);
       changed = true;
     }
   }
@@ -150,6 +163,7 @@ function diagnosis(value: DiagnosisReport, bodyPart: string) {
     value.status !== "pending" ||
     value.reviewer !== null ||
     value.reviewedAt !== null ||
+    value.archivedAt != null ||
     value.reviewConclusion !== null ||
     !Array.isArray(value.scores) ||
     value.scores.length < 1 ||
@@ -177,6 +191,11 @@ function diagnosis(value: DiagnosisReport, bodyPart: string) {
 // Shared demo rules for Express persistence and the hosted IndexedDB demo.
 export class Archive {
   constructor(public state: ArchiveState = emptyArchive()) {}
+  private syncStudyStatus(study: Study) {
+    const latest = this.state.records.find((record) => record.studyId === study.id);
+    if (latest) study.status = recordStatus(latest);
+    else if (study.status !== "uploaded") study.status = "analyzed";
+  }
   private invalidateStudyDiagnoses(
     studyId: string,
     bodyPart: string,
@@ -189,6 +208,7 @@ export class Archive {
         record.diagnosis.bodyPart !== bodyPart
       ) {
         delete record.diagnosis;
+        record.requiresAnalysis = true;
         record.updatedAt = time;
       }
     }
@@ -289,6 +309,7 @@ export class Archive {
       status: "pending",
       reviewer: null,
       reviewedAt: null,
+      archivedAt: null,
       reviewConclusion: null,
     };
   }
@@ -299,6 +320,7 @@ export class Archive {
       throw new ArchiveError("请输入影像名称（最多 200 字）。");
     const time = now();
     this.invalidateStudyDiagnoses(study.id, fields.bodyPart, time);
+    this.syncStudyStatus(study);
     Object.assign(study, fields, { updatedAt: time });
     study.image.name = value.name.trim();
     return study;
@@ -339,12 +361,12 @@ export class Archive {
       annotations: value.annotations,
       annotatedImage: value.annotatedImage,
       ...(value.diagnosis
-        ? { diagnosis: structuredClone(value.diagnosis) }
+        ? { diagnosis: { ...structuredClone(value.diagnosis), archivedAt: null } }
         : {}),
     };
     this.state.records.unshift(record);
     this.invalidateStudyDiagnoses(study.id, fields.bodyPart, time);
-    Object.assign(study, fields, { status: "annotated", updatedAt: time });
+    Object.assign(study, fields, { status: recordStatus(record), updatedAt: time });
     return record;
   }
   updateRecord(id: string, value: RecordUpdate) {
@@ -367,14 +389,19 @@ export class Archive {
       record.annotatedImage = value.annotatedImage!;
     }
     // A report and its review apply only to the exact image region and body part.
-    if (diagnosisChanged) delete record.diagnosis;
+    if (diagnosisChanged && record.diagnosis) {
+      delete record.diagnosis;
+      record.requiresAnalysis = true;
+    }
     Object.assign(record, fields, { updatedAt: now() });
     this.invalidateStudyDiagnoses(
       record.studyId,
       fields.bodyPart,
       record.updatedAt,
     );
-    Object.assign(this.study(record.studyId), fields, {
+    const study = this.study(record.studyId);
+    this.syncStudyStatus(study);
+    Object.assign(study, fields, {
       updatedAt: record.updatedAt,
     });
     return record;
@@ -398,16 +425,30 @@ export class Archive {
       reviewConclusion: value.conclusion.trim(),
     };
     record.updatedAt = time;
-    this.study(record.studyId).updatedAt = time;
+    const study = this.study(record.studyId);
+    this.syncStudyStatus(study);
+    study.updatedAt = time;
+    return record;
+  }
+  archiveReport(id: string): AnnotationRecord {
+    const record = this.record(id);
+    const report = record.diagnosis;
+    if (!report || report.status !== "reviewed")
+      throw new ArchiveError("请先完成分析并确认人工复核，再归档报告。", 409);
+    if (report.archivedAt) return record;
+    const time = now();
+    report.archivedAt = time;
+    record.updatedAt = time;
+    const study = this.study(record.studyId);
+    this.syncStudyStatus(study);
+    study.updatedAt = time;
     return record;
   }
   deleteRecord(id: string) {
     const record = this.record(id);
     this.state.records = this.state.records.filter((r) => r.id !== id);
     const study = this.study(record.studyId);
-    study.status = this.state.records.some((r) => r.studyId === study.id)
-      ? "annotated"
-      : "analyzed";
+    this.syncStudyStatus(study);
     study.updatedAt = now();
     return { deleted: true };
   }

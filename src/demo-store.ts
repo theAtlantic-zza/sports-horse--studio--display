@@ -1,7 +1,7 @@
 import {
   Archive,
   emptyArchive,
-  migrateDemoAnnotators,
+  migrateArchive,
 } from "../shared/archive";
 import type { ArchiveState } from "../shared/types";
 import { ANNOTATORS, LESIONS } from "../shared/types";
@@ -28,7 +28,7 @@ async function initialize() {
     let found = false;
     request.onsuccess = () => {
       found = !!request.result;
-      if (found && migrateDemoAnnotators(request.result))
+      if (found && migrateArchive(request.result))
         store.put(request.result, "current");
     };
     transaction.oncomplete = () => resolve(found);

@@ -6,7 +6,7 @@
 
 GitHub 仓库：<https://github.com/theAtlantic-zza/sports-horse--studio--display>。
 
-GitHub Pages 展示入口：<https://theatlantic-zza.github.io/sports-horse--studio--display/?presentation=1#clinical>。数据看板仍可通过 `#dashboard` 进入。仓库 Settings → Pages 的 Source 设为 GitHub Actions 后，推送 main 分支会自动测试、构建并发布。
+GitHub Pages 默认从[新建检查](https://theatlantic-zza.github.io/sports-horse--studio--display/#clinical)进入。通过[数据看板](https://theatlantic-zza.github.io/sports-horse--studio--display/#dashboard)可以查历史记录，右上角“新建检查”可直接开启诊疗流程。仓库 Settings → Pages 的 Source 设为 GitHub Actions 后，推送 main 分支会自动测试、构建并发布。
 
 Sites 备用入口：<https://equivision-xray-studio.zza1343538124.chatgpt.site/#dashboard>，已由平台确认发布成功；此地址在本次浏览器检查中遇到 Cloudflare 访问拦截。Sites 访问权限默认为站点所有者。
 
@@ -21,10 +21,10 @@ Sites 备用入口：<https://equivision-xray-studio.zza1343538124.chatgpt.site/
 3. **选择上下文**：填写马匹，选择检查部位及关注病变类型，然后点击“开始 AI 辅助分析”。人工标注方式必须先至少绘制一个区域。
 4. **模拟分析**：约 4.8 秒，展示准备影像、核对部位和病变、计算病变倾向、生成报告四个阶段。没有模型调用，也不分析像素；固定演示分布为 82% / 12% / 6%，随选择的关注病变排列。
 5. **查看报告**：生成 `EV-000001` 等编号的待复核报告，展示影像、部位、百分比、模拟发现及建议；明显提示“AI 仅提供参考，最终结论由人工复核确认”。AI 百分比并非真实患病概率。
-6. **人工复核**：点击“人工复核”，选择复核人、填写复核意见，确认后在同一记录中写入已复核状态、意见和北京时间。AI 结果与人工意见分别保留。
-7. **看板留存**：“查看数据看板”自动定位并高亮本次诊疗记录。显示关联图片编号、病变百分比、状态、操作人和复核人；支持诊疗报告筛选、详情复看、搜索、修改和删除。清除搜索恢复完整趋势图。
+6. **人工复核与确认**：点击“人工复核”，选择复核人并填写意见。“确认复核”把报告更新为“已复核待归档”，分别保留 AI 结果、复核意见及复核时间。刷新当前标签页仍可继续处理这份报告。
+7. **归档与检索**：点击“归档报告”后写入独立归档时间并更新统计。“查看数据看板”定位本次 EV 编号；也可搜索马匹、编号、病变或复核人，按状态筛选，查看原图、报告和意见，或编辑、删除记录。对已归档报告重复请求保留第一次归档的时间。
 
-已有数据无需重置：首次访问仍预置 8 张影像与 5 份人工标注档案，诊疗报告按后续操作新增。不同浏览器数据独立，刷新保留。上传已标注图片不猜测几何位置，允许零个可编辑标注框；内置示例有已知的演示标注。
+已有数据无需重置：原版本“确认复核并归档”的诊疗报告沿用其复核时间作为归档时间；旧的待复核报告继续作为草稿保留。首次访问仍预置 8 张影像与 5 份人工标注档案，诊疗报告按后续操作新增。不同浏览器数据独立，刷新保留。上传已标注图片不猜测几何位置，允许零个可编辑标注框；内置示例有已知的演示标注。
 
 修改检查部位、标注图形或标注图片时，相关旧 AI 报告及复核状态失效，保留图片、记录编号和创建时间，需重新分析。删除标注/诊疗记录保留原始影像；删除影像同时移除其关联记录。编号不会在删除后重复使用。
 
@@ -79,7 +79,7 @@ npx vite preview --host 127.0.0.1
 
 - `src/App.tsx`：导航、主流程入口和原有标注工作台。
 - `src/components/ClinicalWorkflow.tsx`：演示登录、影像输入、检查信息、分阶段模拟分析。
-- `src/components/DiagnosticReport.tsx`：百分比报告与人工复核。
+- `src/components/DiagnosticReport.tsx`：百分比报告、人工复核确认与归档。
 - `src/clinical.css`：辅助诊疗页面与报告的响应式样式。
 - `src/components/DataDashboard.tsx`：统计看板、记录列表、查询、编辑与删除确认。
 - `src/components/AnnotationCanvas.tsx`：SVG 标注画布，使用相对原图的归一化坐标。
@@ -91,7 +91,7 @@ npx vite preview --host 127.0.0.1
 - `data/image-archive.json`：本地版本的当前主数据，保存上传图片、分析状态及标注档案。首次修改后生成，不上传 GitHub。
 - `data/annotation-records.json`：旧版本原始数据，若存在则自动导入，原文件保留不动；后续以 `image-archive.json` 为准。
 - `public/demo/horse-xray-source.png`：用户授权的 X 线示例截图。运行时提取其中影像区域，源文件未修改。
-- `tests/api.test.ts`：21 项 API 测试。
+- `tests/api.test.ts`：模拟诊疗 API、归档约束与数据迁移回归测试。
 - `tests/e2e/`：7 项原有标注流程与 Express 诊疗集成测试。
 - `tests/demo/`：10 项部署版本诊疗、看板、CRUD 与汇报模式浏览器测试。
 - `work/qa/`：测试隔离数据、截图、下载样品与失败诊断。
@@ -111,6 +111,7 @@ npx vite preview --host 127.0.0.1
 - `POST /api/studies/:id/analyze`：原标注工作台约 900 ms 后返回固定示例提示。
 - `POST /api/studies/:id/diagnose`：约 4.8 秒后根据选择的部位/病变返回明确标记为 mock 的诊疗报告。
 - `POST /api/records/:id/review`：对同一报告登记人工复核人、意见和时间。
+- `POST /api/records/:id/archive`：对已复核报告单独归档。未复核返回 409，重复归档保留原归档时间。
 - `GET /api/records`：标注档案摘要。
 - `POST /api/records`：创建标注档案。
 - `GET /api/records/:id`：完整档案和原图 / 标注图。
@@ -128,6 +129,6 @@ npm run test:e2e
 npm run test:demo
 ```
 
-当前验证：严格类型检查和两种构建均通过；21 项 API、7 项本地集成浏览器测试、10 项线上演示模式测试全部通过。测试使用本机已安装的 Chrome，无需下载 Chromium。
+验证包括严格类型检查、两种构建、23 项 API 测试、7 项本地集成浏览器测试及 10 项部署模式浏览器测试。浏览器测试使用本机已安装的 Chrome。
 
 验证覆盖编号留存、无效输入、模拟分析、三种绘制方式、移动 / 撤销 / 缩放、完整归档、修改后保留编号、搜索筛选分页、删除与关联清理、刷新和服务重启留存、PNG 下载格式与尺寸，以及手机和平板布局。测试数据和正式本地数据隔离。

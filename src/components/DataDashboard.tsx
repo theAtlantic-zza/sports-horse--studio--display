@@ -20,7 +20,7 @@ import {
   X,
 } from "lucide-react";
 import type { RecordSummary, Study, StudySummary } from "../../shared/types";
-import { LESIONS, STATUS_LABELS } from "../../shared/types";
+import { LESIONS, STATUS_LABELS, recordStatus } from "../../shared/types";
 import { api, BROWSER_DEMO, formatTime } from "../api";
 import Modal from "./Modal";
 import DownloadLink from "./DownloadLink";
@@ -30,6 +30,7 @@ interface Props {
   records: RecordSummary[];
   onRefresh: () => Promise<void>;
   onNew: () => void;
+  onNewExam: () => void;
   onOpen: (id: string) => void;
   onResume: (studyId: string, recordId?: string) => void;
   focusedRecordId?: string;
@@ -44,6 +45,7 @@ export default function DataDashboard({
   records,
   onRefresh,
   onNew,
+  onNewExam,
   onOpen,
   onResume,
   focusedRecordId = "",
@@ -69,6 +71,7 @@ export default function DataDashboard({
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const reports = records.filter((record) => record.diagnosis);
+  const archived = records.filter((record) => recordStatus(record) === "annotated");
   const isFocused =
     search === focusedRecordId &&
     reports.some((record) => record.id === focusedRecordId);
@@ -84,8 +87,7 @@ export default function DataDashboard({
   const analyzed = studies.filter((s) => s.status !== "uploaded").length;
   const completion = studies.length
     ? Math.round(
-        (studies.filter((s) => s.status === "annotated").length /
-          studies.length) *
+        (new Set(archived.map((r) => r.studyId)).size / studies.length) *
           100,
       )
     : 0;
@@ -113,7 +115,7 @@ export default function DataDashboard({
     return {
       label: `${date.getMonth() + 1}/${date.getDate()}`,
       uploads: studies.filter((s) => match(s.createdAt)).length,
-      saved: records.filter((r) => match(r.createdAt)).length,
+      saved: archived.filter((r) => match(r.diagnosis?.archivedAt || r.createdAt)).length,
     };
   });
   const maximum = Math.max(2, ...days.flatMap((d) => [d.uploads, d.saved]));
@@ -140,7 +142,7 @@ export default function DataDashboard({
           (status === "all" ||
             ("status" in item
               ? item.status
-              : item.diagnosis?.status || "annotated") === status)
+              : recordStatus(item)) === status)
         );
       })
       .sort((a, b) =>
@@ -219,12 +221,16 @@ export default function DataDashboard({
           <h1>
             影像数据看板<span className="heading-dot">.</span>
           </h1>
-          <p>从影像到 AI 报告与人工复核，每一份记录都有据可循。</p>
+          <p>新建检查，或按编号、马匹与复核人查找既往记录。</p>
         </div>
-        <button className="button primary" onClick={onNew}>
-          <Plus size={17} />
-          新增影像
-        </button>
+        <div className="dashboard-new-actions">
+          <button className="button light" onClick={onNew}>
+            <FileImage size={16} />新增影像
+          </button>
+          <button className="button primary" onClick={onNewExam}>
+            <Plus size={17} />新建检查
+          </button>
+        </div>
       </div>
       <div className="dashboard-context">
         <span>
@@ -253,8 +259,8 @@ export default function DataDashboard({
             Icon: ScanLine,
           },
           {
-            label: "标注归档记录",
-            value: records.length,
+            label: "已归档记录",
+            value: archived.length,
             unit: "份",
             caption: `${completion}% 影像完成归档`,
             Icon: CheckCheck,
@@ -476,18 +482,12 @@ export default function DataDashboard({
             >
               <option value="all">全部状态</option>
               {Object.entries(STATUS_LABELS)
-                .filter(([key]) => tab === "studies" || key === "annotated")
+                .filter(([key]) => tab === "studies" || !["uploaded", "analyzed"].includes(key))
                 .map(([key, label]) => (
                   <option value={key} key={key}>
                     {label}
                   </option>
                 ))}
-              {tab !== "studies" && (
-                <>
-                  <option value="pending">待复核</option>
-                  <option value="reviewed">已复核</option>
-                </>
-              )}
             </select>
           </div>
           <select
@@ -552,6 +552,7 @@ export default function DataDashboard({
                   ? { kind: "study", item }
                   : { kind: "record", item };
                 const recordId = isStudy ? item.latestRecordId : item.id;
+                const rowStatus = isStudy ? item.status : recordStatus(item);
                 return (
                   <tr
                     key={item.id}
@@ -587,16 +588,10 @@ export default function DataDashboard({
                     </td>
                     <td>
                       <span
-                        className={`status-badge ${isStudy ? item.status : item.diagnosis?.status || "annotated"}`}
+                        className={`status-badge ${rowStatus}`}
                       >
                         <i />
-                        {isStudy
-                          ? STATUS_LABELS[item.status]
-                          : item.diagnosis
-                            ? item.diagnosis.status === "reviewed"
-                              ? "已复核"
-                              : "待复核"
-                            : "已归档"}
+                        {STATUS_LABELS[rowStatus]}
                       </span>
                       <small className="row-source">
                         {item.source === "demo" ? "内置示例" : "本地上传"}
@@ -708,9 +703,9 @@ export default function DataDashboard({
             <div className="dashboard-empty">
               <Database size={30} strokeWidth={1.3} />
               <h3>暂无匹配记录</h3>
-              <p>调整筛选条件，或新增一张影像开始演示。</p>
-              <button className="text-button" onClick={onNew}>
-                新增影像 <ArrowRight size={13} />
+              <p>调整筛选条件，或开始一次新的影像检查。</p>
+              <button className="text-button" onClick={onNewExam}>
+                开始新检查 <ArrowRight size={13} />
               </button>
             </div>
           )}

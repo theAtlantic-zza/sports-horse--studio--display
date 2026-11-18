@@ -36,13 +36,16 @@ async function login(page: Page) {
   await page.getByRole("button", { name: "登录工作台", exact: true }).click();
 }
 
-test("login, staged AI report, human review and dashboard persist as one record", async ({
+test("start from the dashboard, review, resume after refresh and explicitly archive one report", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1600, height: 840 });
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await login(page);
+  await page.goto("/?presentation=1#dashboard");
+  await page.getByRole("button", { name: "新建检查", exact: true }).click();
+  await expect(page).toHaveURL(/#clinical$/);
+  await page.getByRole("button", { name: "登录工作台", exact: true }).click();
   await page
     .getByRole("button", { name: "载入已标注示例", exact: true })
     .click();
@@ -68,6 +71,8 @@ test("login, staged AI report, human review and dashboard persist as one record"
     percentage: 82,
   });
   expect(pending.diagnosis?.status).toBe("pending");
+  expect(pending.diagnosis?.archivedAt).toBeNull();
+  await expect(page.getByRole("button", { name: "归档报告", exact: true })).toHaveCount(0);
   await expect(page.getByTestId("diagnosis-report")).toContainText(
     "AI 仅提供参考",
   );
@@ -76,13 +81,28 @@ test("login, staged AI report, human review and dashboard persist as one record"
     .boundingBox();
   expect(reviewButton!.y + reviewButton!.height).toBeLessThanOrEqual(840);
   await page.getByRole("button", { name: "人工复核", exact: true }).click();
+  await expect(page.getByLabel("复核意见", { exact: true })).toHaveValue("");
   await page.getByLabel("复核人", { exact: true }).selectOption("朱诗嘉");
   await page
     .getByLabel("复核意见", { exact: true })
     .fill("演示复核：已核对影像与检查部位。");
   await page
-    .getByRole("button", { name: "确认复核并归档", exact: true })
+    .getByRole("button", { name: "确认复核", exact: true })
     .click();
+  const archiveButton = page.getByRole("button", { name: "归档报告", exact: true });
+  await expect(archiveButton).toBeVisible();
+  const reviewed = (await stored(page)).records[0];
+  expect(reviewed.diagnosis).toMatchObject({ status: "reviewed", reviewer: "朱诗嘉", archivedAt: null });
+  const recordsView = await page.context().newPage();
+  await recordsView.goto("/#dashboard");
+  await recordsView.getByRole("button", { name: "诊疗报告 1", exact: true }).click();
+  await expect(recordsView.locator(".dashboard-table")).toContainText("已复核待归档");
+  await expect(recordsView.locator(".dashboard-metric").filter({ hasText: "已归档记录" }).locator("strong")).toHaveText("05份");
+  await recordsView.close();
+  await page.reload();
+  await expect(page.getByTestId("diagnosis-report")).toContainText(pending.id);
+  await expect(page.getByTestId("diagnosis-report")).toContainText("演示复核：已核对影像与检查部位。");
+  await archiveButton.click();
   await expect(
     page.getByRole("button", { name: "查看数据看板", exact: true }),
   ).toBeVisible();
@@ -93,7 +113,8 @@ test("login, staged AI report, human review and dashboard persist as one record"
   await page.getByRole("button", { name: "查看数据看板", exact: true }).click();
   await expect(page.locator(".dashboard-table tbody tr")).toHaveCount(1);
   await expect(page.locator(".dashboard-table")).toContainText("82%");
-  await expect(page.locator(".dashboard-table")).toContainText("已复核");
+  await expect(page.locator(".dashboard-table")).toContainText("已归档");
+  await expect(page.locator(".dashboard-metric").filter({ hasText: "已归档记录" }).locator("strong")).toHaveText("06份");
   await expect(page.locator(".dashboard-table")).toContainText("朱诗嘉");
   await page.reload();
   await page.getByRole("button", { name: "诊疗报告 1", exact: true }).click();
@@ -106,10 +127,15 @@ test("login, staged AI report, human review and dashboard persist as one record"
     reviewConclusion: "演示复核：已核对影像与检查部位。",
   });
   expect(archive.records[0].diagnosis?.reviewedAt).toBeTruthy();
+  expect(archive.records[0].diagnosis?.archivedAt).toBeTruthy();
   await page.getByRole("button", { name: "详情", exact: true }).click();
   await expect(
     page.getByRole("dialog", { name: "诊疗报告档案" }),
   ).toContainText("朱诗嘉");
+  await page.getByRole("button", { name: "关闭对话框" }).click();
+  await page.getByRole("button", { name: "新建检查", exact: true }).click();
+  await expect(page.getByRole("button", { name: "载入已标注示例", exact: true })).toBeVisible();
+  await expect(page.getByTestId("diagnosis-report")).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 
