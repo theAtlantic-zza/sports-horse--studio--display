@@ -640,6 +640,7 @@ export default function DataDashboard({
                     </td>
                     <td>
                       <div className="dashboard-row-actions">
+                        {recordId && <a className="text-button" href={`#viewer/${recordId}`} aria-label={`阅片 ${recordId}`}>阅片</a>}
                         <button
                           className="text-button"
                           onClick={() =>

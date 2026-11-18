@@ -30,6 +30,12 @@ Sites 备用入口：<https://equivision-xray-studio.zza1343538124.chatgpt.site/
 
 原有“总览工作台”和“影像标注”入口保留：矩形框（R）、多边形（P）、线段（L）、选择移动（V）、Delete 删除、⌘Z / Ctrl+Z 撤销；支持原图/标注图对照和 PNG 下载。
 
+## 病例阅片与对照
+
+[打开追风的阅片示例](https://theatlantic-zza.github.io/sports-horse--studio--display/#viewer/EV-000001)。已生成编号的病例可从看板「阅片」或报告中的「打开阅片工作台」进入。左侧切换影像，中央核对原片，右侧保存体位、影像质量和逐图测量。「补充影像」可以上传本次检查的第二张真实视图；如仅展示界面，可点「载入标注对照片」比较同一原片与等尺寸的标注图。该图继承主图体位，重复点击只保留一张。
+
+双窗支持分别选片、平移、缩放、旋转、翻转、反色、亮度与对比度。距离按两点计算原图像素，角度以三个点的第二点为顶点。结果保留在所属影像。主图的模拟分析、报告草稿、复核签名、独立归档和历史查询使用同一 EV 编号；已签署内容可重开查看。病例链接共享页面入口，用户上传的附件、测量和意见留在其浏览器。团队共享与真实模型在 Python 工作台运行。
+
 ## 中期汇报视频
 
 汇报视图：<https://theatlantic-zza.github.io/sports-horse--studio--display/?presentation=1>。
@@ -79,6 +85,8 @@ npx vite preview --host 127.0.0.1
 
 - `src/App.tsx`：导航、主流程入口和原有标注工作台。
 - `src/components/ClinicalWorkflow.tsx`：演示登录、影像输入、检查信息、分阶段模拟分析。
+- `src/components/CaseReading.tsx` 和 `src/components/viewer/`：病例路由、阅片画布和报告入口。画布模块与 [sport-model 的阅片实现](https://github.com/elfaw775/sport-model/tree/codex/case-viewer/backend/static)同步，静态版接入本地演示存储。
+- `shared/viewer.ts`：逐图测量、同片标注对照、草稿版本和签署后只读规则。
 - `src/components/DiagnosticReport.tsx`：百分比报告、人工复核确认与归档。
 - `src/clinical.css`：辅助诊疗页面与报告的响应式样式。
 - `src/components/DataDashboard.tsx`：统计看板、记录列表、查询、编辑与删除确认。
@@ -93,7 +101,7 @@ npx vite preview --host 127.0.0.1
 - `public/demo/horse-xray-source.png`：用户授权的 X 线示例截图。运行时提取其中影像区域，源文件未修改。
 - `tests/api.test.ts`：模拟诊疗 API、归档约束与数据迁移回归测试。
 - `tests/e2e/`：7 项原有标注流程与 Express 诊疗集成测试。
-- `tests/demo/`：10 项部署版本诊疗、看板、CRUD 与汇报模式浏览器测试。
+- `tests/demo/`：13 项部署版本诊疗、看板、CRUD 与汇报模式浏览器测试。
 - `work/qa/`：测试隔离数据、截图、下载样品与失败诊断。
 - `.openai/hosting.json`：Sites 托管标识与静态部署目录，不包含凭据。
 - `outputs/`：发布时生成的部署包，不纳入源码版本管理。
@@ -129,6 +137,6 @@ npm run test:e2e
 npm run test:demo
 ```
 
-验证包括严格类型检查、两种构建、23 项 API 测试、7 项本地集成浏览器测试及 10 项部署模式浏览器测试。浏览器测试使用本机已安装的 Chrome。
+验证包括严格类型检查、两种构建、25 项 API 测试、7 项本地集成浏览器测试及 13 项部署模式浏览器测试。浏览器测试使用本机已安装的 Chrome。
 
 验证覆盖编号留存、无效输入、模拟分析、三种绘制方式、移动 / 撤销 / 缩放、完整归档、修改后保留编号、搜索筛选分页、删除与关联清理、刷新和服务重启留存、PNG 下载格式与尺寸，以及手机和平板布局。测试数据和正式本地数据隔离。

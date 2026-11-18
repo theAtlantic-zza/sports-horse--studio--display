@@ -4,6 +4,7 @@ import type { Server } from "node:http";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createApp } from "../server/app.ts";
+import type { ViewerState } from "../shared/types.ts";
 
 const png =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jVJkAAAAASUVORK5CYII=";
@@ -755,5 +756,97 @@ describe("mock diagnostic reports and human review", () => {
       undefined,
     );
     assert.equal(sixth.diagnosis.bodyPart, otherPart);
+  });
+
+  it("keeps multi-film measurements and report authors on the original numbered record", async () => {
+    const study = await (await fetch(`${diagnosticBase}/api/studies`, json(image))).json();
+    const visit = await (await fetch(`${diagnosticBase}/api/records`, json({
+      ...diagnosticPayload(), studyId: study.id, annotations: [annotation], diagnosis: undefined,
+    }))).json();
+    const url = `${diagnosticBase}/api/records/${visit.id}`;
+    const change = (action: unknown) => fetch(url + "/viewer", json(action));
+    const view = async (): Promise<ViewerState> => (await fetch(url + "/viewer")).json();
+    assert.equal((await view()).images[0].id, "primary");
+    assert.equal((await change({op: "attach", image})).status, 200);
+    assert.equal((await change({op: "metadata", imageId: "1", projection: "背内侧-掌外侧斜位", quality: "良好"})).status, 200);
+    const mark = {op: "measure", imageId: "primary", kind: "distance", author: "王一伊",
+      points: [{x: 0,y: 0}, {x: 0.6,y: 0.8}]};
+    for (const outside of [{x:-1,y:0}, {x:1,y:0.5}, {x:0.5,y:1}])
+      assert.equal((await change({...mark, points: [{x:0,y:0}, outside]})).status, 400);
+    assert.equal((await change(mark)).status, 200);
+    assert.equal((await change({...mark, imageId: "1", kind: "angle",
+      points: [{x: 0,y: 0.5},{x: 0,y: 0},{x: 0.5,y: 0}]})).status, 200);
+    const [primary, second] = (await view()).images;
+    assert.equal(primary.measurements[0].value, 1);
+    assert.equal(second.measurements[0].value, 90);
+    assert.equal(second.measurements[0].unit, "°");
+    assert.equal(second.projection, "背内侧-掌外侧斜位");
+    assert.equal(primary.projection, "未确认");
+    const remove = {op: "removeMeasurement", measurementId: second.measurements[0].id};
+    assert.equal((await change({...remove, imageId:"primary"})).status, 404);
+    assert.equal((await change({...remove, imageId:"1"})).status, 200);
+    assert.equal((await view()).images[1].measurements.length, 0);
+    const listing = await (await fetch(`${diagnosticBase}/api/records`)).text();
+    assert.equal(listing.includes("base64"), false);
+    assert.equal((await fetch(url + "/diagnose", json({...input, bodyPart: "右前肢 · 腕关节"}))).status, 400);
+    const [one, retry] = await Promise.all([1,2].map(async () => (await fetch(url + "/diagnose", json(input))).json()));
+    assert.equal(one.id, visit.id);
+    assert.deepEqual(one.diagnosis, retry.diagnosis);
+    assert.equal((await view()).images.length, 2);
+    const draft = {op: "draft", findings: "已阅读两张影像", conclusion: "保留复查记录", author: "王一伊", revision: 0};
+    assert.equal((await change(draft)).status, 200);
+    assert.equal((await change({...draft, author:"朱诗嘉", findings:"冲突的新内容"})).status, 409);
+    const {findings, conclusion} = draft;
+    assert.equal((await fetch(url + "/review", json({reviewer: "朱诗嘉", findings: " ", conclusion, revision: 1}))).status, 400);
+    assert.equal((await fetch(url + "/review", json({reviewer: "朱诗嘉", findings, conclusion, revision: 0}))).status, 409);
+    const signed = await (await fetch(url + "/review", json({reviewer: "朱诗嘉", findings, conclusion, revision: 1}))).json();
+    assert.equal(signed.diagnosis.reviewer, "朱诗嘉");
+    assert.equal(signed.diagnosis.archivedAt, null);
+    assert.equal((await view()).reviewDraft.author, "王一伊");
+    assert.equal((await change(mark)).status, 409);
+    assert.equal((await change({...draft, revision: 1})).status, 409);
+    assert.equal((await fetch(url + "/archive", {method:"POST"})).status, 200);
+    const saved = await view();
+    assert.deepEqual(saved.images[0].measurements, primary.measurements);
+    await new Promise<void>(resolve => diagnosticServer.close(() => resolve()));
+    await launch();
+    const restored = await (await fetch(`${diagnosticBase}/api/records/${visit.id}/viewer`)).json();
+    assert.deepEqual(restored, saved);
+  });
+
+  it("stores an annotated copy once and keeps its projection bound to the primary film", async () => {
+    const study = await (await fetch(`${diagnosticBase}/api/studies`, json(image))).json();
+    const visit = await (await fetch(`${diagnosticBase}/api/records`, json({
+      ...diagnosticPayload(), studyId: study.id, annotations: [annotation], diagnosis: undefined,
+    }))).json();
+    const endpoint = `${diagnosticBase}/api/records/${visit.id}`;
+    const change = (value: unknown) => fetch(endpoint + "/viewer", json(value));
+    const metadata = (imageId: string, projection: string) =>
+      change({op: "metadata", imageId, projection, quality: "良好"});
+    const copy = {op: "attachAnnotatedCopy", image};
+    assert.equal((await metadata("primary", "侧位")).status, 200);
+    assert.equal((await change({...copy, image:{...image, width:2}})).status, 400);
+    const mismatched = Buffer.from(png.split(",")[1], "base64");
+    mismatched.writeUInt32BE(2, 20);
+    assert.equal((await change({...copy, image:{...image, dataUrl:"data:image/png;base64," + mismatched.toString("base64")}})).status, 400);
+    assert.equal((await change({op:"attach", image, projection:"斜位"})).status, 200);
+    const results = await Promise.all([change(copy), change(copy)]);
+    for (const response of results) {
+      assert.equal(response.status, 200);
+      const state: ViewerState = await response.json();
+      assert.deepEqual(state.images.map(f => f.derivedFrom), [undefined, undefined, "primary"]);
+      assert.equal(state.images[2].projection, "侧位");
+    }
+    const timestamp = (await (await fetch(endpoint)).json()).updatedAt;
+    assert.equal((await change(copy)).status, 200);
+    assert.equal((await (await fetch(endpoint)).json()).updatedAt, timestamp);
+    assert.equal((await metadata("2", "正位")).status, 409);
+    assert.equal((await metadata("2", "侧位")).status, 200);
+    assert.equal((await metadata("primary", "正位")).status, 200);
+    const state: ViewerState = await (await fetch(endpoint + "/viewer")).json();
+    assert.deepEqual(state.images.map(f => f.projection), ["正位", "斜位", "正位"]);
+    assert.equal((await fetch(endpoint + "/diagnose", json(input))).status, 200);
+    assert.equal((await fetch(endpoint + "/review", json({reviewer:"朱诗嘉", conclusion:"已核对"}))).status, 200);
+    assert.equal((await change(copy)).status, 409);
   });
 });

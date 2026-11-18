@@ -60,10 +60,11 @@ export async function prepareUpload(file: File): Promise<StudyImage> {
 export async function renderAnnotated(
   image: StudyImage,
   annotations: Annotation[],
+  includeFooter = true,
 ): Promise<string> {
   const canvas = document.createElement("canvas");
   canvas.width = image.width;
-  canvas.height = image.height + 68;
+  canvas.height = image.height + (includeFooter ? 68 : 0);
   const context = canvas.getContext("2d")!;
   context.drawImage(await loadImage(image.dataUrl), 0, 0);
   context.lineWidth = Math.max(2.5, image.width / 400);
@@ -112,6 +113,7 @@ export async function renderAnnotated(
     context.fillStyle = "#203d34";
     context.fillText(text, x + 9, y + fontSize + 3);
   });
+  if (!includeFooter) return canvas.toDataURL("image/png");
   context.fillStyle = "#173f35";
   context.fillRect(0, image.height, image.width, 68);
   context.fillStyle = "#e5edcf";

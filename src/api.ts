@@ -11,6 +11,8 @@ import type {
   DiagnosisInput,
   DiagnosisReport,
   DiagnosisReview,
+  ViewerAction,
+  ViewerState,
 } from "../shared/types";
 import { DIAGNOSIS_DELAY_MS } from "../shared/types";
 
@@ -36,6 +38,11 @@ const serverApi = {
     request<{ deleted: boolean }>(`/api/studies/${id}`, { method: "DELETE" }),
   records: () => request<RecordSummary[]>("/api/records"),
   record: (id: string) => request<AnnotationRecord>(`/api/records/${id}`),
+  viewer: (id: string) => request<ViewerState>(`/api/records/${id}/viewer`),
+  updateViewer: (id: string, action: ViewerAction) =>
+    request<ViewerState>(`/api/records/${id}/viewer`, {method: "POST", body: JSON.stringify(action)}),
+  diagnoseRecord: (id: string, input: DiagnosisInput) =>
+    request<AnnotationRecord>(`/api/records/${id}/diagnose`, {method: "POST", body: JSON.stringify(input)}),
   upload: (image: StudyImage) =>
     request<{ id: string }>("/api/studies", {
       method: "POST",
@@ -89,6 +96,14 @@ const browserApi: typeof serverApi = {
     (await import("./demo-store")).demoOperation((a) => a.records()),
   record: async (id) =>
     (await import("./demo-store")).demoOperation((a) => a.record(id)),
+  viewer: async (id) =>
+    (await import("./demo-store")).demoOperation((a) => a.viewer(id)),
+  updateViewer: async (id, action) =>
+    (await import("./demo-store")).demoOperation((a) => a.updateViewer(id, action), true),
+  diagnoseRecord: async (id, input) => {
+    await new Promise((resolve) => setTimeout(resolve, DIAGNOSIS_DELAY_MS));
+    return (await import("./demo-store")).demoOperation((a) => a.diagnoseRecord(id, input), true);
+  },
   upload: async (image) =>
     (await import("./demo-store")).demoOperation((a) => a.upload(image), true),
   analyze: async (id) => {

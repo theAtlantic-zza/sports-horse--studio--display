@@ -81,6 +81,7 @@ test("start from the dashboard, review, resume after refresh and explicitly arch
     .boundingBox();
   expect(reviewButton!.y + reviewButton!.height).toBeLessThanOrEqual(840);
   await page.getByRole("button", { name: "人工复核", exact: true }).click();
+  await page.getByLabel("影像所见", { exact: true }).fill("已核对投照位与标注区域。");
   await expect(page.getByLabel("复核意见", { exact: true })).toHaveValue("");
   await page.getByLabel("复核人", { exact: true }).selectOption("朱诗嘉");
   await page

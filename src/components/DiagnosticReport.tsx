@@ -32,12 +32,20 @@ export default function DiagnosticReport({
   const [current, setCurrent] = useState(record);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewer, setReviewer] = useState(record.annotator);
-  const [conclusion, setConclusion] = useState("");
+  const [findings, setFindings] = useState(record.viewerData?.reviewDraft.findings || "");
+  const [conclusion, setConclusion] = useState(record.viewerData?.reviewDraft.conclusion || "");
+  const [draftRevision,setDraftRevision] = useState(record.viewerData?.reviewDraft.revision || 0);
+  const [draftSaved,setDraftSaved] = useState(record.viewerData?.reviewDraft.updatedAt || "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   useEffect(() => {
     setCurrent(record);
     setReviewer(record.annotator);
+    const draft=record.viewerData?.reviewDraft;
+    setFindings(draft?.findings || "");
+    setConclusion(draft?.conclusion || "");
+    setDraftRevision(draft?.revision || 0);
+    setDraftSaved(draft?.updatedAt || "");
   }, [record]);
   const diagnosis = current.diagnosis;
   if (!diagnosis) return null;
@@ -49,13 +57,19 @@ export default function DiagnosticReport({
     onReviewOpen?.(open);
   }
 
-  async function save(action: "review" | "archive") {
+  async function save(action: "draft" | "review" | "archive") {
     setError("");
     setBusy(true);
     try {
+      if (action === "draft") {
+        const state = await api.updateViewer(current.id, {op:"draft",findings,conclusion,revision:draftRevision,author:reviewer});
+        setDraftRevision(state.reviewDraft.revision);
+        setDraftSaved(state.reviewDraft.updatedAt || "");
+        return;
+      }
       const next = action === "archive"
         ? await api.archiveReport(current.id)
-        : await api.reviewRecord(current.id, { reviewer, conclusion });
+        : await api.reviewRecord(current.id, { reviewer, findings, conclusion, revision:draftRevision });
       setCurrent(next);
       showReview(false);
       onChange?.(next);
@@ -111,7 +125,7 @@ export default function DiagnosticReport({
         <div className="diagnostic-image-panel">
           <div>
             <span>本次分析影像</span>
-            <span>ANNOTATED IMAGE</span>
+            <a className="report-view-link" href={`#viewer/${current.id}`}>打开阅片工作台 ↗</a>
           </div>
           <img src={current.annotatedImage} alt="诊疗报告中的标注影像" />
           <p>
@@ -179,7 +193,8 @@ export default function DiagnosticReport({
           <BadgeCheck size={20} />
           <div>
             <strong>人工复核已完成 · {diagnosis.reviewer}</strong>
-            <p>{diagnosis.reviewConclusion}</p>
+            {current.viewerData?.reviewDraft.findings && <p>影像所见 · {current.viewerData.reviewDraft.findings}</p>}
+            <p>复核结论 · {diagnosis.reviewConclusion}</p>
           </div>
           <span>
             {diagnosis.reviewedAt && formatTime(diagnosis.reviewedAt)}
@@ -257,6 +272,10 @@ export default function DiagnosticReport({
                 ))}
               </select>
             </label>
+            <label>影像所见
+              <textarea aria-label="影像所见" value={findings} onChange={event=>setFindings(event.target.value)}
+                placeholder="描述核对过的投照位、异常区域及测量" maxLength={2000} rows={2} required disabled={busy}/>
+            </label>
             <label>
               复核意见
               <textarea
@@ -279,7 +298,9 @@ export default function DiagnosticReport({
                 {error}
               </p>
             )}
+            {draftSaved && <small role="status">草稿已保存 · {formatTime(draftSaved)}</small>}
             <div className="modal-footer">
+              <button type="button" className="button light" onClick={()=>void save("draft")} disabled={busy || (!conclusion.trim() && !findings.trim())}>保存草稿</button>
               <button
                 type="button"
                 className="button light"
@@ -291,7 +312,7 @@ export default function DiagnosticReport({
               <button
                 type="submit"
                 className="button primary"
-                disabled={busy || !conclusion.trim()}
+                disabled={busy || !conclusion.trim() || !findings.trim()}
               >
                 {busy ? (
                   <LoaderCircle size={16} className="spin" />

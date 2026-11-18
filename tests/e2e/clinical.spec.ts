@@ -17,6 +17,7 @@ test("clinical UI persists its report and human review through the Express mock 
   });
   await page.getByRole("button", { name: "人工复核", exact: true }).click();
   await page.getByLabel("复核人", { exact: true }).selectOption("李其杭");
+  await page.getByLabel("影像所见", { exact: true }).fill("已核对投照位与标注区域。");
   await page.getByLabel("复核意见", { exact: true }).fill("已核对影像与分析结果。");
   await page
     .getByRole("button", { name: "确认复核", exact: true })

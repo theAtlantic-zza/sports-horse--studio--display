@@ -64,8 +64,9 @@ import DownloadLink from "./components/DownloadLink";
 import { RecordDetail, RecordList } from "./components/Records";
 import ClinicalWorkflow, { activeReportKey } from "./components/ClinicalWorkflow";
 import DiagnosticReport from "./components/DiagnosticReport";
+import CaseReading from "./components/CaseReading";
 
-type View = "clinical" | "overview" | "workspace" | "records" | "dashboard";
+type View = "viewer" | "clinical" | "overview" | "workspace" | "records" | "dashboard";
 type Attributes = { lesion: Lesion; confidence: number; note: string };
 const TOOLS = [
   { id: "select", label: "选择 / 移动", shortcut: "V", Icon: MousePointer2 },
@@ -75,11 +76,16 @@ const TOOLS = [
 ] as const;
 const VIEW_LABELS = {
   clinical: "AI 辅助诊疗",
+  viewer: "病例阅片",
   overview: "总览工作台",
   workspace: "影像标注",
   records: "标注记录",
   dashboard: "数据看板",
 };
+
+function viewerRoute() {
+  return /^#viewer\/(EV-\d+)(\/report)?$/.exec(window.location.hash);
+}
 
 export default function App() {
   const [presentation, setPresentation] = useState(
@@ -87,8 +93,10 @@ export default function App() {
   );
   const [view, setView] = useState<View>(() => {
     const hash = window.location.hash.slice(1);
+    if (viewerRoute()) return "viewer";
     return Object.hasOwn(VIEW_LABELS, hash) ? (hash as View) : "clinical";
   });
+  const [readingHash, setReadingHash] = useState(window.location.hash);
   const [activeUser, setActiveUser] = useState(
     sessionStorage.getItem("equivision-demo-user") || ANNOTATORS[0],
   );
@@ -128,13 +136,17 @@ export default function App() {
 
   useEffect(() => {
     const url = new URL(window.location.href);
+    if (view === "viewer") return;
     url.hash = view;
     window.history.replaceState(null, "", url);
   }, [view]);
   useEffect(() => {
     function followHash() {
       const hash = window.location.hash.slice(1);
-      setView(Object.hasOwn(VIEW_LABELS, hash) ? (hash as View) : "clinical");
+      setReadingHash(window.location.hash);
+      setDetail(null);
+      if (viewerRoute()) setView("viewer");
+      else setView(Object.hasOwn(VIEW_LABELS, hash) ? (hash as View) : "clinical");
     }
     window.addEventListener("hashchange", followHash);
     return () => window.removeEventListener("hashchange", followHash);
@@ -575,6 +587,8 @@ export default function App() {
           </div>
         )}
 
+        {view === "viewer" && (<CaseReading key={readingHash.split("/")[1]} id={readingHash.split("/")[1] || "EV-000001"}
+          showReport={readingHash.endsWith("/report")} user={activeUser} refresh={refreshRecords}/>)}
         {view === "clinical" && (
           <ClinicalWorkflow
             onRecordsChanged={refreshRecords}

@@ -124,6 +124,16 @@ export async function createApp(
   app.get("/api/records/:id", (req, res) =>
     res.json(archive.record(req.params.id)),
   );
+  app.get("/api/records/:id/viewer", (req, res) =>
+    res.json(archive.viewer(req.params.id)),
+  );
+  app.post("/api/records/:id/viewer", async (req, res) =>
+    res.json(await commit(() => archive.updateViewer(req.params.id, req.body))),
+  );
+  app.post("/api/records/:id/diagnose", async (req, res) => {
+    await new Promise((resolve) => setTimeout(resolve, diagnosisDelay));
+    res.json(await commit(() => archive.diagnoseRecord(req.params.id, req.body)));
+  });
   app.patch("/api/records/:id", async (req, res) =>
     res.json(await commit(() => archive.updateRecord(req.params.id, req.body))),
   );

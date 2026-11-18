@@ -170,6 +170,7 @@ try {
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
     await dialog.getByLabel("复核人", { exact: true }).selectOption("朱诗嘉");
+    await dialog.getByLabel("影像所见", { exact: true }).fill("已核对投照位与标注区域。");
     await dialog.getByLabel("复核意见", { exact: true }).fill("已复核影像、检查部位与分析结果，确认本次演示报告。");
     await pause(1100);
     await click(dialog.getByRole("button", { name: "确认复核", exact: true }));

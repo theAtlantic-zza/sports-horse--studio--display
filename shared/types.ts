@@ -39,6 +39,8 @@ export interface DiagnosisReport extends DiagnosisInput {
 export interface DiagnosisReview {
   reviewer: string;
   conclusion: string;
+  findings?: string;
+  revision?: number;
 }
 export type ShapeType = "rectangle" | "polygon" | "line";
 export type Point = { x: number; y: number };
@@ -60,6 +62,47 @@ export interface StudyImage {
   source: "demo" | "upload";
 }
 
+export interface ViewerMeasurement {
+  id: string;
+  kind: "distance" | "angle";
+  points: Point[];
+  value: number;
+  unit: "px" | "°";
+  createdBy: string;
+  createdAt: string;
+}
+export interface FilmMetadata {
+  projection: string;
+  quality: string;
+  measurements: ViewerMeasurement[];
+}
+export interface ViewerImage extends FilmMetadata {
+  id: string;
+  derivedFrom?: "primary";
+  filename: string;
+  width: number;
+  height: number;
+  dataUrl: string;
+}
+export interface ReviewDraft {
+  findings: string;
+  conclusion: string;
+  revision: number;
+  author: string | null;
+  updatedAt: string | null;
+}
+export interface ViewerState {
+  images: ViewerImage[];
+  reviewDraft: ReviewDraft;
+}
+export type ViewerAction =
+  | {op: "attach"; image: StudyImage; projection?: string; quality?: string}
+  | {op: "attachAnnotatedCopy"; image: StudyImage}
+  | {op: "metadata"; imageId: string; projection: string; quality: string}
+  | {op: "measure"; imageId: string; kind: "distance" | "angle"; points: Point[]; author: string}
+  | {op: "removeMeasurement"; imageId: string; measurementId: string}
+  | {op: "draft"; findings: string; conclusion: string; revision: number; author: string};
+
 export interface SaveRecordInput {
   studyId: string;
   horseName: string;
@@ -77,11 +120,12 @@ export interface AnnotationRecord extends Omit<SaveRecordInput, "studyId"> {
   updatedAt: string;
   original: StudyImage;
   requiresAnalysis?: boolean;
+  viewerData?: {primary: FilmMetadata; attachments: ViewerImage[]; reviewDraft: ReviewDraft};
 }
 
 export type RecordSummary = Omit<
   AnnotationRecord,
-  "annotatedImage" | "original"
+  "annotatedImage" | "original" | "viewerData"
 > & {
   source: StudyImage["source"];
 };

@@ -1,4 +1,7 @@
 import { ANNOTATORS, BODY_PARTS, LESIONS, recordStatus } from "./types.ts";
+import { ArchiveError, isImage, text, validateImage } from "./validation.ts";
+import { readViewer, updateViewer, saveDraft } from "./viewer.ts";
+export { ArchiveError } from "./validation.ts";
 import type {
   Annotation,
   AnnotationRecord,
@@ -15,16 +18,8 @@ import type {
   DiagnosisInput,
   DiagnosisReport,
   DiagnosisReview,
+  ViewerAction,
 } from "./types.ts";
-
-export class ArchiveError extends Error {
-  constructor(
-    message: string,
-    public status = 400,
-  ) {
-    super(message);
-  }
-}
 export const emptyArchive = (): ArchiveState => ({
   nextImageNumber: 1,
   nextRecordNumber: 1,
@@ -66,11 +61,6 @@ export function migrateArchive(state: ArchiveState): boolean {
   }
   return changed;
 }
-const text = (value: unknown, max = 40): value is string =>
-  typeof value === "string" && value.trim().length > 0 && value.length <= max;
-const isImage = (value: unknown): value is string =>
-  typeof value === "string" &&
-  /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+=*$/.test(value);
 const now = () => new Date().toISOString();
 const number = (prefix: string, value: number) =>
   `${prefix}-${String(value).padStart(6, "0")}`;
@@ -191,6 +181,14 @@ function diagnosis(value: DiagnosisReport, bodyPart: string) {
 // Shared demo rules for Express persistence and the hosted IndexedDB demo.
 export class Archive {
   constructor(public state: ArchiveState = emptyArchive()) {}
+  private requireReanalysis(record: AnnotationRecord) {
+    delete record.diagnosis;
+    record.requiresAnalysis = true;
+    if (record.viewerData) {
+      const revision = record.viewerData.reviewDraft.revision + 1;
+      record.viewerData.reviewDraft = {findings: "", conclusion: "", author: null, updatedAt: null, revision};
+    }
+  }
   private syncStudyStatus(study: Study) {
     const latest = this.state.records.find((record) => record.studyId === study.id);
     if (latest) study.status = recordStatus(latest);
@@ -207,8 +205,7 @@ export class Archive {
         record.diagnosis &&
         record.diagnosis.bodyPart !== bodyPart
       ) {
-        delete record.diagnosis;
-        record.requiresAnalysis = true;
+        this.requireReanalysis(record);
         record.updatedAt = time;
       }
     }
@@ -234,19 +231,7 @@ export class Archive {
     return study;
   }
   upload(image: StudyImage): { id: string } {
-    if (
-      !image ||
-      !text(image.name, 200) ||
-      !isImage(image.dataUrl) ||
-      !Number.isInteger(image.width) ||
-      !Number.isInteger(image.height) ||
-      image.width < 1 ||
-      image.height < 1 ||
-      image.width > 8000 ||
-      image.height > 8000 ||
-      !["demo", "upload"].includes(image.source)
-    )
-      throw new ArchiveError("请选择有效的 PNG、JPG 或 WebP 图片。");
+    validateImage(image);
     const id = number("IMG", this.state.nextImageNumber++);
     const time = now();
     this.state.studies.unshift({
@@ -313,6 +298,20 @@ export class Archive {
       reviewConclusion: null,
     };
   }
+  diagnoseRecord(id: string, input: DiagnosisInput) {
+    const record = this.record(id);
+    diagnosisInput(input);
+    if (record.bodyPart !== input.bodyPart)
+      throw new ArchiveError("请按病例已登记的检查部位进行模拟分析。");
+    if (record.diagnosis) return record;
+    if (input.inputMode === "manual" && !record.annotations.length)
+      throw new ArchiveError("人工标注模式需要至少一个区域。");
+    record.diagnosis = this.diagnose(record.studyId, input);
+    delete record.requiresAnalysis;
+    record.updatedAt = record.diagnosis.generatedAt;
+    this.syncStudyStatus(this.study(record.studyId));
+    return record;
+  }
   updateStudy(id: string, value: StudyUpdate) {
     const study = this.study(id);
     const fields = metadata(value);
@@ -333,7 +332,7 @@ export class Archive {
   }
   records(): RecordSummary[] {
     return this.state.records.map(
-      ({ original, annotatedImage: _image, ...record }) => ({
+      ({ original, annotatedImage: _image, viewerData: _viewer, ...record }) => ({
         ...record,
         source: original.source,
       }),
@@ -343,6 +342,12 @@ export class Archive {
     const record = this.state.records.find((r) => r.id === id);
     if (!record) throw new ArchiveError("没有找到这条标注记录。", 404);
     return record;
+  }
+  viewer(id: string) {
+    return readViewer(this.record(id));
+  }
+  updateViewer(id: string, action: ViewerAction) {
+    return updateViewer(this.record(id), action);
   }
   save(value: SaveRecordInput): AnnotationRecord {
     const study = this.study(value?.studyId);
@@ -390,8 +395,7 @@ export class Archive {
     }
     // A report and its review apply only to the exact image region and body part.
     if (diagnosisChanged && record.diagnosis) {
-      delete record.diagnosis;
-      record.requiresAnalysis = true;
+      this.requireReanalysis(record);
     }
     Object.assign(record, fields, { updatedAt: now() });
     this.invalidateStudyDiagnoses(
@@ -414,8 +418,15 @@ export class Archive {
       );
     if (!value || !text(value.reviewer) || !text(value.conclusion, 1000))
       throw new ArchiveError("请填写复核人和人工复核结论。");
+    if (value.findings !== undefined && !text(value.findings, 2000))
+      throw new ArchiveError("请填写影像所见后确认报告。");
     if (record.diagnosis.status === "reviewed")
       throw new ArchiveError("此报告已完成复核，无需重复提交。");
+    const draft = readViewer(record).reviewDraft;
+    saveDraft(record, {
+      op: "draft", findings: value.findings ?? draft.findings, conclusion: value.conclusion,
+      revision: value.revision ?? 0, author: value.reviewer,
+    });
     const time = now();
     record.diagnosis = {
       ...record.diagnosis,
